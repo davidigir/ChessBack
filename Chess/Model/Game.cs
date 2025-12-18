@@ -14,11 +14,18 @@ namespace Chess.Model
 
         public PieceColor CurrentTurn { get; private set; }
 
+        public GameState CurrentGameState { get; set; }
+
+        public GameOverReason Finish { get; set;}
+
+
+
         public List<string> MovesHistory { get; set; } = new List<string>();
 
 
         //we can implement smtg to add viewers to the game
         public List<string> ConnectionIds { get; set; } = new List<string>();
+
         public string? WhitePlayerConnectionId { get; set; }
         public string? BlackPlayerConnectionId { get; set; }
 
@@ -36,10 +43,14 @@ namespace Chess.Model
             
             this.Board = new Board();
             this.Board.InitializeBoard();
+            this.WhitePlayer = new Player(false);
+            this.BlackPlayer = new Player(false);
 
             this.CurrentTurn = PieceColor.White;
+            this.CurrentGameState = GameState.Waiting;
+            this.Finish = GameOverReason.PLAYING; //by default playing
 
-            Console.WriteLine("Partida de Ajedrez Iniciada");
+            Console.WriteLine("Chess game Init");
         }
 
         public bool IsFull()
@@ -51,12 +62,13 @@ namespace Chess.Model
 
         public bool MakeMove(string move)
         {
+            if (this.CurrentGameState != GameState.Playing) return false; //
             Coordinate source = Coordinate.FromAlgebraic(move.Substring(0, 2));
             Coordinate destination = Coordinate.FromAlgebraic(move.Substring(2, 2));
             Piece pieceToMove = Board.Pieces[source.Y, source.X];
             if (pieceToMove == null || pieceToMove.PieceColor != this.CurrentTurn)
             {
-                Console.WriteLine("Error: La pieza seleccionada no corresponde al turno actual.");
+                Console.WriteLine("Error. Piece selected cant play in this turn");
                 return false;
             }
 
@@ -74,6 +86,9 @@ namespace Chess.Model
                 {
                     //checkmate
                     Console.WriteLine($"{oppositePlayerColor} Lose by checkmate");
+                    if (oppositePlayerColor == PieceColor.Black) this.Finish = GameOverReason.WHITE_WINS;
+                    else this.Finish = GameOverReason.BLACK_WINS;
+                    this.CurrentGameState = GameState.Finished;
 
 
                 }
@@ -81,14 +96,18 @@ namespace Chess.Model
                 {
                     //stalemate
                     Console.WriteLine("This is a Draw");
+                    this.Finish = GameOverReason.STALEMATE;
+                    this.CurrentGameState = GameState.Finished;
+
                 }
-                if(!isCheckStaleMate && isCheck)
+                if (!isCheckStaleMate && isCheck)
                 {
                     //check
                     Console.WriteLine($"{oppositePlayerColor} is under check");
+
                 }
 
-                
+
                 this.CurrentTurn = oppositePlayerColor;
                 return true;
 

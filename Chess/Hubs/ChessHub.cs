@@ -1,4 +1,5 @@
-﻿using Chess.Model;
+﻿using Chess.Enums;
+using Chess.Model;
 using Chess.Service;
 using Microsoft.AspNetCore.SignalR;
 
@@ -45,8 +46,13 @@ namespace Chess.Hubs
                 await Clients.Group(groupName).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
                 string fenBoard = _gameService.GetFenBoard(gameId);
                 await Clients.Group(groupName).SendAsync("BoardFen", fenBoard);
-                
+                Dictionary<string, bool> playerStates = _gameService.getPlayersState(gameId);
+                await Clients.Group(groupName).SendAsync("PlayerReady", playerStates);
+
                 await Clients.Groups(groupName).SendAsync("MovesHistory", _gameService.getStringMovesHistory(gameId)); //if the game has not started should be "" but maybe an spectator
+                GameOverReason finishType = _gameService.IsTheGameFinished(gameId);
+                if (finishType != GameOverReason.PLAYING) await Clients.Group(groupName).SendAsync("GameFinish", finishType.ToString());
+                await Clients.Group(groupName).SendAsync("RoomFull", _gameService.IsTheRoomFull(gameId));
 
 
 
@@ -67,12 +73,24 @@ namespace Chess.Hubs
 
             Console.WriteLine($"[DEBUG] {move}");
             _gameService.TryMakeMove(gameId, move);
+            GameOverReason finishType = _gameService.IsTheGameFinished(gameId);
+            if ( finishType != GameOverReason.PLAYING) await Clients.Group(groupName).SendAsync("GameFinish", finishType.ToString());
             string fenBoard = _gameService.GetFenBoard(gameId);
             await Clients.Group(groupName).SendAsync("MoveReceived", senderId, move);
             await Clients.Group(groupName).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
             await Clients.Group(groupName).SendAsync("BoardFen", fenBoard);
             await Clients.Groups(groupName).SendAsync("MovesHistory", _gameService.getStringMovesHistory(gameId));
 
+        }
+
+        public async Task PlayerReady(Guid gameId, string color, bool ready)
+        {
+            string groupName = gameId.ToString();
+            string senderId = Context.ConnectionId;
+            Console.WriteLine($"[PLAYER] {gameId} {color}  {ready}");
+            _gameService.setPlayerReady(gameId, color, ready);
+            Dictionary<string, bool> playerStates = _gameService.getPlayersState(gameId);
+            await Clients.Group(groupName).SendAsync("PlayerReady", playerStates);
         }
 
         public async Task StartGame(Guid gameId)
@@ -90,6 +108,8 @@ namespace Chess.Hubs
                 _gameService.RemoveConnectionFromGame(gameId.Value, connectionId);
                 await Clients.Group(groupName).SendAsync("PlayerDisconected", "Player off");
                 Console.WriteLine($"DEBUG, {connectionId} disconnected");
+                await Clients.Group(groupName).SendAsync("RoomFull", _gameService.IsTheRoomFull(gameId.Value));
+
             }
 
             await base.OnDisconnectedAsync(exception);

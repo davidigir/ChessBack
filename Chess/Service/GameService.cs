@@ -32,7 +32,71 @@ namespace Chess.Service
                     game.BlackPlayerConnectionId = connectionId;
                     return "b";
                 }
+
                 throw new InvalidOperationException("Room full");
+
+            }
+        }
+
+        //we can set this for the waiting for players text
+        public bool IsTheRoomFull(Guid gameId)
+        {
+            lock (_lock)
+            {
+                if (!_activeGames.TryGetValue(gameId, out var game))
+                {
+                    throw new KeyNotFoundException($"Game With ID {gameId} not found");
+                }
+                Console.WriteLine($"Esto es un problema {game.IsBlackAssigned} {game.IsWhiteAssigned}");
+                if (game.IsBlackAssigned && game.IsWhiteAssigned) return true;
+                return false;
+
+            } }
+        
+
+        public void setPlayerReady(Guid gameId, string color, bool ready)
+        {
+            lock (_lock)
+            {
+                if (!_activeGames.TryGetValue(gameId, out var game))
+                {
+                    throw new KeyNotFoundException($"Game With ID {gameId} not found");
+                }
+                
+                if(color == "w")
+                {
+                    game.WhitePlayer.Ready = ready;
+                }
+                else if(color == "b")
+                {
+                    game.BlackPlayer.Ready = ready;
+                }
+
+                if (game.BlackPlayer.Ready && game.WhitePlayer.Ready)
+                {
+                    game.CurrentGameState = GameState.Playing;
+                    Console.WriteLine("[GAME] Playing");
+                }
+
+            }
+        }
+
+        public Dictionary<string, bool> getPlayersState(Guid gameId)
+        {
+            lock (_lock)
+            {
+                if (!_activeGames.TryGetValue(gameId, out var game))
+                {
+                    throw new KeyNotFoundException($"Game With ID {gameId} not found");
+                }
+
+                Dictionary<string, bool> playerStates = new Dictionary<string, bool>();
+                playerStates.Add("b", game.BlackPlayer.Ready);
+                playerStates.Add("w", game.WhitePlayer.Ready);
+                return playerStates;
+
+
+
 
             }
         }
@@ -126,6 +190,20 @@ namespace Chess.Service
             }
             // Si la partida no existe, no puede unirse.
             return false;
+        }
+
+        public GameOverReason IsTheGameFinished(Guid gameId)
+        {
+            Game game = GetGame(gameId);
+
+            if (game == null)
+            {
+                Console.WriteLine($"Error: Game {gameId} not found.");
+                throw new InvalidOperationException("No Game with this Guid");
+
+            }
+            return game.Finish;
+
         }
 
         public void AddConnectionToGame(Guid gameId, string connectionId)
