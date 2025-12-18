@@ -40,7 +40,8 @@ namespace Chess.Controllers
             {
                 HttpOnly = true,
                 Secure = false, // in production must be true for https
-                SameSite = SameSiteMode.Strict,
+                SameSite = SameSiteMode.None,
+                Path = "/",
                 Expires = DateTime.UtcNow.AddHours(1)
             });
 
