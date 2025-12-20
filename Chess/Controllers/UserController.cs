@@ -1,6 +1,8 @@
 ﻿using Chess.Dto;
 using Chess.Service;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Chess.Controllers
 {
@@ -40,7 +42,7 @@ namespace Chess.Controllers
             {
                 HttpOnly = true,
                 Secure = false, // in production must be true for https
-                SameSite = SameSiteMode.None,
+                SameSite = SameSiteMode.Lax,
                 Path = "/",
                 Expires = DateTime.UtcNow.AddHours(1)
             });
@@ -65,6 +67,16 @@ namespace Chess.Controllers
             {
                 return StatusCode(500, new { message = "Internal server error", details = ex.Message });
             }
+        }
+        [Authorize]
+        [HttpGet("me")]
+        public IActionResult GetMe()
+        {
+            return Ok(new
+            {
+                username = User.Identity?.Name,
+                id = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            });
         }
     }
 }

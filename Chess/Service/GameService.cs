@@ -1,6 +1,9 @@
 ﻿using Chess.Enums;
+using Chess.Hubs;
 using Chess.Model;
+using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace Chess.Service
 {
@@ -10,76 +13,16 @@ namespace Chess.Service
         private readonly ConcurrentDictionary<Guid, Game> _activeGames = new ConcurrentDictionary<Guid, Game>();
         private readonly Dictionary<string, Guid> _connectionToGameMap = new Dictionary<string, Guid>();
         private readonly object _lock = new object();
+        private readonly ConcurrentDictionary<Guid, System.Timers.Timer> _reconnectionTimers = new();
 
-
-        public string AssignColorToConnection(Guid gameId, string connectionId)
-        {
-            lock (_lock)
-            {
-                if(!_activeGames.TryGetValue(gameId, out var game))
-                {
-                    throw new KeyNotFoundException($"Game With ID {gameId} not found");
-                }
-                if (game.WhitePlayerConnectionId == connectionId) return "w";
-                if (game.BlackPlayerConnectionId == connectionId) return "b";
-                if (!game.IsWhiteAssigned)
-                {
-                    game.WhitePlayerConnectionId = connectionId;
-                    return "w";
-                }
-                if (!game.IsBlackAssigned)
-                {
-                    game.BlackPlayerConnectionId = connectionId;
-                    return "b";
-                }
-
-                throw new InvalidOperationException("Room full");
-
-            }
-        }
-
-        //we can set this for the waiting for players text
-        public bool IsTheRoomFull(Guid gameId)
-        {
-            lock (_lock)
-            {
-                if (!_activeGames.TryGetValue(gameId, out var game))
-                {
-                    throw new KeyNotFoundException($"Game With ID {gameId} not found");
-                }
-                Console.WriteLine($"Esto es un problema {game.IsBlackAssigned} {game.IsWhiteAssigned}");
-                if (game.IsBlackAssigned && game.IsWhiteAssigned) return true;
-                return false;
-
-            } }
+        private readonly IHubContext<ChessHub> _hubContext;
         
 
-        public void setPlayerReady(Guid gameId, string color, bool ready)
+        public GameService(IHubContext<ChessHub> hubContext)
         {
-            lock (_lock)
-            {
-                if (!_activeGames.TryGetValue(gameId, out var game))
-                {
-                    throw new KeyNotFoundException($"Game With ID {gameId} not found");
-                }
-                
-                if(color == "w")
-                {
-                    game.WhitePlayer.Ready = ready;
-                }
-                else if(color == "b")
-                {
-                    game.BlackPlayer.Ready = ready;
-                }
-
-                if (game.BlackPlayer.Ready && game.WhitePlayer.Ready)
-                {
-                    game.CurrentGameState = GameState.Playing;
-                    Console.WriteLine("[GAME] Playing");
-                }
-
-            }
+            _hubContext = hubContext;
         }
+
 
         public Dictionary<string, bool> getPlayersState(Guid gameId)
         {
@@ -91,15 +34,15 @@ namespace Chess.Service
                 }
 
                 Dictionary<string, bool> playerStates = new Dictionary<string, bool>();
-                playerStates.Add("b", game.BlackPlayer.Ready);
-                playerStates.Add("w", game.WhitePlayer.Ready);
+                playerStates.Add("b", game.BlackPlayer.IsReady);
+                playerStates.Add("w", game.WhitePlayer.IsReady);
                 return playerStates;
-
-
 
 
             }
         }
+
+
 
         public PieceColor getCurrentTurn(Guid gameId)
         {
@@ -182,15 +125,7 @@ namespace Chess.Service
             return game.MakeMove(move);
         }
 
-        public bool CanJoinGame(Guid gameId)
-        {
-            if (_activeGames.TryGetValue(gameId, out var game))
-            {
-                return !game.IsFull();
-            }
-            // Si la partida no existe, no puede unirse.
-            return false;
-        }
+
 
         public GameOverReason IsTheGameFinished(Guid gameId)
         {
@@ -206,62 +141,9 @@ namespace Chess.Service
 
         }
 
-        public void AddConnectionToGame(Guid gameId, string connectionId)
-        {
-            lock (_lock)
-            {
-
-            if (_activeGames.TryGetValue(gameId, out var game))
-            {
-                if (!game.ConnectionIds.Contains(connectionId) && game.ConnectionIds.Count < 2)
-                {
-                        _connectionToGameMap[connectionId] = gameId;
-                        game.ConnectionIds.Add(connectionId);
-                }
-                else if (game.ConnectionIds.Count >= 2)
-                {
-                    throw new InvalidOperationException("Game is full (2 players max)");
-                }
-            }
-            else
-            {
-                throw new KeyNotFoundException($"Game {gameId} not found.");
-            }
-            }
-
-        }
-
-        public void RemoveConnectionFromGame(Guid gameId, string connectionId)
-        {
-            lock (_lock)
-            {
-                if (!_activeGames.TryGetValue(gameId, out var game)) 
-                {
-                    throw new KeyNotFoundException($"Game {gameId} not found");
-                }
-
-                if (game.ConnectionIds.Contains(connectionId))
-                {
-                    game.ConnectionIds.Remove(connectionId);
-                    _connectionToGameMap.Remove(connectionId);
 
 
-                    if (game.BlackPlayerConnectionId == connectionId)
-                    {
-                        game.BlackPlayerConnectionId = null;
-                    }
 
-                    if (game.WhitePlayerConnectionId == connectionId)
-                    {
-                        game.WhitePlayerConnectionId = null;
-                    }
-
-
-                    string remainingConnections = string.Join(", ", _connectionToGameMap.Keys);
-                    Console.WriteLine($"[DEBUG-MAP] Conexion {connectionId} deleted. Remaining: ({_connectionToGameMap.Count}): {remainingConnections}");
-                }
-            }
-        }
 
         public string GetFenBoard(Guid gameId)
         {
@@ -278,5 +160,163 @@ namespace Chess.Service
             }
             return null;
         }
-    }
-}
+
+
+
+        public bool JoinGame(Guid gameId, string nickname)
+        {
+            Game game = this.GetGame(gameId);
+            if (game == null) return false;
+            lock (_lock)
+            {
+                //if (game.WhitePlayer != null && game.BlackPlayer != null) return false;
+                if(game.WhitePlayer != null && game.WhitePlayer.Nickname == nickname && !game.WhitePlayer.IsConnected)
+                {
+                    //StopTimeoutTimer(gameId);
+
+                    return true;
+                }
+                if (game.BlackPlayer != null && game.BlackPlayer.Nickname == nickname && !game.BlackPlayer.IsConnected)
+                {
+                    //StopTimeoutTimer(gameId);
+                    return true;
+                }
+                if (game.WhitePlayer == null)
+                {
+                    game.WhitePlayer = new Player(nickname, PieceColor.White);
+                    Console.WriteLine($"Jugador {nickname}");
+                    return true;
+
+                }
+                else if (game.BlackPlayer == null)
+                {
+                    game.BlackPlayer = new Player(nickname, PieceColor.Black);
+                    Console.WriteLine($"Jugador {nickname}");
+
+                    return true;
+                }
+                Console.WriteLine("Te vas fuera");
+                return false;
+            }
+
+        }
+
+      
+        public void HandlePlayerDisconnection(Guid gameId, string nickname)
+        {
+            lock (_lock){
+
+                var game = this.GetGame(gameId);
+                if (game == null)
+                {
+
+                }
+                if (game.CurrentGameState == GameState.Waiting)
+                {
+                    if (game.WhitePlayer != null && game.WhitePlayer.Nickname == nickname)
+                    {
+                        Console.WriteLine("WhitePlayer");
+                        game.WhitePlayer = null;
+
+                    }
+                    else if (game.BlackPlayer != null && game.BlackPlayer.Nickname == nickname)
+                    {
+                        Console.WriteLine("BlackPlayer");
+
+                        game.BlackPlayer = null;
+                    }
+                }
+                else if(game.CurrentGameState == GameState.Playing)
+
+                {
+
+                    Console.WriteLine("TimeOut");
+
+                    var player = (game.WhitePlayer?.Nickname == nickname) ? game.WhitePlayer : game.BlackPlayer;
+                    if (player != null) player.IsConnected = false;
+                    StartTimeoutTimer(gameId);
+
+                }
+
+
+            }
+
+
+        }
+
+        private void StartTimeoutTimer(Guid gameId)
+        {
+            System.Timers.Timer timer = new System.Timers.Timer(5000);
+            timer.AutoReset = false;
+            timer.Enabled = true;
+
+            timer.Elapsed += (sender, e) =>
+            {
+                try
+                {
+                    HandleTimeout(gameId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error en timeout: {ex.Message}");
+                }
+            };
+
+            _reconnectionTimers[gameId] = timer;
+            timer.Start();
+            Console.WriteLine("Timer iniciado");
+
+
+        }
+
+        private async void HandleTimeout(Guid gameId)
+        {
+            var game = GetGame(gameId);
+            if (game == null) return;
+
+            lock (_lock)
+            {
+                if (game.WhitePlayer != null && !game.WhitePlayer.IsConnected)
+                {
+                    game.Finish = GameOverReason.WHITE_DISCONNECTED;
+
+                }
+                else if (game.BlackPlayer != null && !game.BlackPlayer.IsConnected)
+                {
+                    game.Finish = GameOverReason.BLACK_DISCONNECTED;
+                }
+
+                game.CurrentGameState = GameState.Finished;
+
+
+                _reconnectionTimers.TryRemove(gameId, out _);
+
+                Console.WriteLine(game.CurrentGameState.ToString());
+                Console.WriteLine(game.Finish.ToString());
+            }
+            await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
+            {
+                white = game.WhitePlayer?.Nickname,
+                whiteIsReady = game.WhitePlayer?.IsReady,
+                black = game.BlackPlayer?.Nickname,
+                blackIsReady = game.BlackPlayer?.IsReady,
+                status = game.CurrentGameState.ToString(),
+                whitePlayerOnline = game.WhitePlayer?.IsConnected,
+                blackPlayerOnline = game.BlackPlayer?.IsConnected,
+
+            });
+
+            await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
+        }
+
+        public void StopTimeoutTimer(Guid gameId)
+        {
+            Console.WriteLine("Intentando parar");
+            if (_reconnectionTimers.TryRemove(gameId, out System.Timers.Timer timer))
+            {
+                timer.Stop();
+                timer.Dispose();
+                Console.WriteLine("Player reconected");
+            }
+        }
+    } }

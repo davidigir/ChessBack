@@ -68,5 +68,12 @@ namespace Chess.Service
             return user;
         }
 
+        public async Task<User?> GetByNickname(string nickname)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Nickname == nickname);
+            if (user == null) throw new Exception("User not found");
+            return user;
+        }
+
     }
 }

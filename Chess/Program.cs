@@ -63,13 +63,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnMessageReceived = context =>
             {
-                var accessToken = context.Request.Query["access_token"];
-
-                // Si la petición va hacia el Hub de SignalR
+                // Extraemos el token de la cookie que llamamos "chess_token"
+                var accessToken = context.Request.Cookies["X-Access-Token"];
                 var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chesshub"))
+
+                //if (!string.IsNullOrEmpty(accessToken) &&
+                //(path.StartsWithSegments("/chesshub") || path.StartsWithSegments("/")))
+                if (!string.IsNullOrEmpty(accessToken))
                 {
-                    // Le decimos a .NET que el token está en la URL
                     context.Token = accessToken;
                 }
                 return Task.CompletedTask;
@@ -85,7 +86,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
 app.UseCors(CorsOrigins);
 app.UseAuthentication(); 

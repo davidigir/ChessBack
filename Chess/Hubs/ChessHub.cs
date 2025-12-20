@@ -21,49 +21,69 @@ namespace Chess.Hubs
 
             string groupName = gameId.ToString();
             string connectionId = Context.ConnectionId;
-            string assignedColor = "";
 
             try
             {
 
-                if (!_gameService.CanJoinGame(gameId))
-                {
-                    await Clients.Caller.SendAsync("JoinFailed", "The game is full");
-                    return;
-                       
-                }
-                _gameService.AddConnectionToGame(gameId, connectionId);
-                assignedColor = _gameService.AssignColorToConnection(gameId, connectionId);
                 await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
 
 
                 Console.WriteLine($"[DEBUG-HUB] Conexion {Context.ConnectionId} in the group: {groupName}");
 
 
-
-                await Clients.Caller.SendAsync("GameJoined", gameId, assignedColor);
-                await Clients.OthersInGroup(groupName).SendAsync("PlayerJoined", connectionId);
-                await Clients.Group(groupName).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
-                string fenBoard = _gameService.GetFenBoard(gameId);
-                await Clients.Group(groupName).SendAsync("BoardFen", fenBoard);
-                Dictionary<string, bool> playerStates = _gameService.getPlayersState(gameId);
-                await Clients.Group(groupName).SendAsync("PlayerReady", playerStates);
-
-                await Clients.Groups(groupName).SendAsync("MovesHistory", _gameService.getStringMovesHistory(gameId)); //if the game has not started should be "" but maybe an spectator
-                GameOverReason finishType = _gameService.IsTheGameFinished(gameId);
-                if (finishType != GameOverReason.PLAYING) await Clients.Group(groupName).SendAsync("GameFinish", finishType.ToString());
-                await Clients.Group(groupName).SendAsync("RoomFull", _gameService.IsTheRoomFull(gameId));
-
-
-
-
-                Console.WriteLine($"[DEBUG-HUB] Confirmation 'GameJoined' sended to {Context.ConnectionId}");
             }
+
             catch (Exception ex)
             {
                 Console.WriteLine($"[ERROR-HUB] Excepcion in JoinGame: {ex.Message}");
                 await Clients.Caller.SendAsync("JoinFailed", ex.Message);
             }
+        }
+
+        public async Task SendPlayerReady(Guid gameId)
+        {
+            var nickname = Context.User?.Identity?.Name;
+            var game = _gameService.GetGame(gameId);
+            var color = "";
+            var status = false;
+
+            if (game == null || nickname == null) return;
+
+            if (game.WhitePlayer?.Nickname == nickname)
+            {
+                game.WhitePlayer.IsReady = !game.WhitePlayer.IsReady;
+                color = "White";
+                status = game.WhitePlayer.IsReady;
+                  
+            }
+            else if (game.BlackPlayer?.Nickname == nickname)
+            {
+                game.BlackPlayer.IsReady = !game.BlackPlayer.IsReady;
+                color = "Black";
+                status = game.BlackPlayer.IsReady;
+
+            }
+
+            bool bothReady = (game.WhitePlayer?.IsReady ?? false) && (game.BlackPlayer?.IsReady ?? false);
+            if (bothReady) game.CurrentGameState = GameState.Playing;
+            await Clients.Caller.SendAsync("ReceiveMyStatus", new
+            {
+                color = color,
+                nickname = nickname,
+                status = status
+            });
+            await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
+            {
+                white = game.WhitePlayer?.Nickname,
+                whiteIsReady = game.WhitePlayer?.IsReady,
+                whitePlayerOnline = game.WhitePlayer?.IsConnected,
+                blackPlayerOnline = game.BlackPlayer?.IsConnected,
+                black = game.BlackPlayer?.Nickname,
+                blackIsReady = game.BlackPlayer?.IsReady,
+                status = game.CurrentGameState.ToString()
+            });
+
+
         }
 
         public async Task MakeMove(Guid gameId, string move)
@@ -74,7 +94,24 @@ namespace Chess.Hubs
             Console.WriteLine($"[DEBUG] {move}");
             _gameService.TryMakeMove(gameId, move);
             GameOverReason finishType = _gameService.IsTheGameFinished(gameId);
-            if ( finishType != GameOverReason.PLAYING) await Clients.Group(groupName).SendAsync("GameFinish", finishType.ToString());
+            if (finishType != GameOverReason.PLAYING)
+            {   
+                await Clients.Group(groupName).SendAsync("GameOverReason", finishType.ToString());
+                var game = _gameService.GetGame(gameId);
+
+                await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
+                {
+                    white = game.WhitePlayer?.Nickname,
+                    whiteIsReady = game.WhitePlayer?.IsReady,
+                    whitePlayerOnline = game.WhitePlayer?.IsConnected,
+                    blackPlayerOnline = game.BlackPlayer?.IsConnected,
+                    black = game.BlackPlayer?.Nickname,
+                    blackIsReady = game.BlackPlayer?.IsReady,
+                    status = game.CurrentGameState.ToString()
+
+                });
+
+            }
             string fenBoard = _gameService.GetFenBoard(gameId);
             await Clients.Group(groupName).SendAsync("MoveReceived", senderId, move);
             await Clients.Group(groupName).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
@@ -83,39 +120,104 @@ namespace Chess.Hubs
 
         }
 
-        public async Task PlayerReady(Guid gameId, string color, bool ready)
+        public override async Task OnConnectedAsync()
         {
-            string groupName = gameId.ToString();
-            string senderId = Context.ConnectionId;
-            Console.WriteLine($"[PLAYER] {gameId} {color}  {ready}");
-            _gameService.setPlayerReady(gameId, color, ready);
-            Dictionary<string, bool> playerStates = _gameService.getPlayersState(gameId);
-            await Clients.Group(groupName).SendAsync("PlayerReady", playerStates);
+            var nickname = Context.User?.Identity?.Name;
+            var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
+
+            if (Guid.TryParse(gameIdString, out Guid gameId) && nickname != null)
+            {
+                var game = _gameService.GetGame(gameId);
+                if (game == null) return;
+
+                string assignedColor = "";
+                bool statusPlayer = false;
+                if (game.WhitePlayer?.Nickname == nickname)
+                {
+                    assignedColor = "White";
+                    game.WhitePlayer.ConnectionId = Context.ConnectionId;
+                    statusPlayer = game.WhitePlayer.IsReady;
+                    game.WhitePlayer.IsConnected = true;
+                }
+                else if (game.BlackPlayer?.Nickname == nickname)
+                {
+                    assignedColor = "Black";
+                    game.BlackPlayer.ConnectionId = Context.ConnectionId;
+                    statusPlayer = game.BlackPlayer.IsReady;
+                    game.BlackPlayer.IsConnected = true;
+                }
+                _gameService.StopTimeoutTimer(gameId);
+
+                if (assignedColor != "")
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, gameId.ToString());
+
+                    await Clients.Caller.SendAsync("ReceiveMyStatus", new
+                    {
+                        color = assignedColor,
+                        nickname = nickname,
+                        status = statusPlayer
+                    });
+                    await Clients.Group(gameId.ToString()).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
+
+                    await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
+                    {
+                        white = game.WhitePlayer?.Nickname,
+                        whiteIsReady = game.WhitePlayer?.IsReady,
+                        whitePlayerOnline = game.WhitePlayer?.IsConnected,
+                        blackPlayerOnline = game.BlackPlayer?.IsConnected,
+                        black = game.BlackPlayer?.Nickname,
+                        blackIsReady = game.BlackPlayer?.IsReady,
+                        status = game.CurrentGameState.ToString()
+
+                    });
+
+                    string fenBoard = _gameService.GetFenBoard(gameId);
+                    await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
+                    await Clients.Group(gameId.ToString()).SendAsync("BoardFen", fenBoard);
+
+
+                }
+            }
+            Console.WriteLine("[OnCOnnected]");
+            await base.OnConnectedAsync();
         }
 
-        public async Task StartGame(Guid gameId)
-        {
-            string groupName = gameId.ToString();
-
-        }
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            string connectionId = Context.ConnectionId;
-            Guid? gameId = _gameService.GetGameIdByConnectionId(connectionId);
-            if (gameId.HasValue)
+            var nickname = Context.User?.Identity?.Name;
+            var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
+
+            if (Guid.TryParse(gameIdString, out Guid gameId) && nickname != null)
             {
+                var game = _gameService.GetGame(gameId);
+                if (game == null) return;
+
                 string groupName = gameId.ToString();
-                _gameService.RemoveConnectionFromGame(gameId.Value, connectionId);
-                await Clients.Group(groupName).SendAsync("PlayerDisconected", "Player off");
-                Console.WriteLine($"DEBUG, {connectionId} disconnected");
-                await Clients.Group(groupName).SendAsync("RoomFull", _gameService.IsTheRoomFull(gameId.Value));
+                
+                    //Only discconect the player
+                    _gameService.HandlePlayerDisconnection(gameId, nickname);
+                
+                    //Timeout 
+
+
+                
+
+                await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
+                {
+                    white = game.WhitePlayer?.Nickname,
+                    whiteIsReady = game.WhitePlayer?.IsReady,
+                    black = game.BlackPlayer?.Nickname,
+                    blackIsReady = game.BlackPlayer?.IsReady,
+                    status = game.CurrentGameState.ToString(),
+                    whitePlayerOnline = game.WhitePlayer?.IsConnected,
+                    blackPlayerOnline = game.BlackPlayer?.IsConnected
+
+                });
 
             }
 
             await base.OnDisconnectedAsync(exception);
-            
-          
-
         }
 
     }

@@ -9,8 +9,8 @@ namespace Chess.Model
 
         public Guid Id { get; set; }
         public Board Board { get; set; }
-        public Player WhitePlayer { get; set; }
-        public Player BlackPlayer { get; set; }
+        public Player? WhitePlayer { get; set; }
+        public Player? BlackPlayer { get; set; }
 
         public PieceColor CurrentTurn { get; private set; }
 
@@ -24,14 +24,6 @@ namespace Chess.Model
 
 
         //we can implement smtg to add viewers to the game
-        public List<string> ConnectionIds { get; set; } = new List<string>();
-
-        public string? WhitePlayerConnectionId { get; set; }
-        public string? BlackPlayerConnectionId { get; set; }
-
-        public bool IsWhiteAssigned => !string.IsNullOrEmpty(WhitePlayerConnectionId);
-        public bool IsBlackAssigned => !string.IsNullOrEmpty(BlackPlayerConnectionId);
-
 
 
         public Game(
@@ -43,19 +35,13 @@ namespace Chess.Model
             
             this.Board = new Board();
             this.Board.InitializeBoard();
-            this.WhitePlayer = new Player(false);
-            this.BlackPlayer = new Player(false);
+
 
             this.CurrentTurn = PieceColor.White;
             this.CurrentGameState = GameState.Waiting;
             this.Finish = GameOverReason.PLAYING; //by default playing
 
             Console.WriteLine("Chess game Init");
-        }
-
-        public bool IsFull()
-        {
-            return ConnectionIds.Count >= 2;
         }
 
         

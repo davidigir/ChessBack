@@ -1,7 +1,9 @@
 ﻿using Chess.Dto;
 using Chess.Model;
 using Chess.Service;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Chess.Controllers
 {
@@ -12,10 +14,13 @@ namespace Chess.Controllers
     {
 
         private readonly GameService _gameService;
+        private readonly IUserService _userService;
 
-        public GameController( GameService gameService)
+        public GameController(GameService gameService, IUserService userService)
         {
             _gameService = gameService;
+            _userService = userService;
+
         }
 
         [HttpPost("start")]
@@ -46,7 +51,7 @@ namespace Chess.Controllers
             game.Board.GetFenPlacement();
 
             return Ok($"FEN del game {gameId} mostrado");
-            
+
 
 
         }
@@ -58,7 +63,7 @@ namespace Chess.Controllers
             bool success = _gameService.TryMakeMove(gameId, request.Move);
             if (success)
             {
-            return Ok("Movimento ejecutado");
+                return Ok("Movimento ejecutado");
 
             }
             else
@@ -79,5 +84,32 @@ namespace Chess.Controllers
             return Ok(gameIds);
         }
 
+        [Authorize]
+        [HttpPost("join/{gameId}")]
+        public async Task<ActionResult<bool>> JoinGame(Guid gameId)
+        {
+            Console.WriteLine("Testtt");
+
+            var nickname = User.Identity?.Name;
+            if (string.IsNullOrEmpty(nickname)) return Unauthorized();
+            Console.WriteLine("Test");
+
+
+            User? user = await _userService.GetByNickname(nickname);
+            if (user == null) return NotFound("User not found");
+
+            bool joined = _gameService.JoinGame(gameId, nickname);
+
+            if (joined)
+            {
+                return Ok(new { message = "Joined successfully", gameId = gameId });
+            }
+            else
+            {
+                return BadRequest("Could not join: Game is full");
+            }
+
+
+        }
     }
 }

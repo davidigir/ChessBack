@@ -7,5 +7,7 @@ namespace Chess.Service
         Task<User?> Register(string nickname, string password);
         Task<string?> Login(string nickname, string password);
         Task<User?> GetById(int id);
+        Task<User?> GetByNickname(string nickname);
+
     }
 }
