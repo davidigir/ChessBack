@@ -2,6 +2,7 @@
 using Chess.Service;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace Chess.Controllers
@@ -37,17 +38,10 @@ namespace Chess.Controllers
         public async Task<IActionResult> Login([FromBody] UserLoginDto dto)
         {
             var token = await _userService.Login(dto.Nickname, dto.Password);
-            if (token == null) return Unauthorized(new {message = "Bad Credentials"});
-            Response.Cookies.Append("X-Access-Token", token, new CookieOptions
-            {
-                HttpOnly = true,
-                Secure = false, // in production must be true for https
-                SameSite = SameSiteMode.Lax,
-                Path = "/",
-                Expires = DateTime.UtcNow.AddHours(1)
-            });
+            if (token == null) return Unauthorized(new { message = "Bad Credentials" });
+            SetTokenCookie(token);
 
-            return Ok(new {message = "Login correctly"});
+            return Ok(new { message = "Login correctly" });
         }
 
         [HttpGet("id/{id}")]
@@ -77,6 +71,107 @@ namespace Chess.Controllers
                 username = User.Identity?.Name,
                 id = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             });
+        }
+
+        [Authorize]
+        [HttpPut("update")]
+        public async Task<IActionResult> UpdateProfile([FromBody] UserUpdateDto model)
+        {
+            Console.WriteLine(model.Nickname.ToString());
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null) return Unauthorized();
+            int userId = int.Parse(userIdClaim);
+            try
+            {
+                var updatedUser = await _userService.UpdateUser(userId, model);
+                var newToken = _userService.GenerateToken(updatedUser);
+
+                SetTokenCookie(newToken);
+                return Ok(new
+                {
+                    updatedUser.Nickname
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+        [Authorize]
+        [HttpGet("profile")]
+        public async Task<IActionResult> Profile()
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null) return Unauthorized();
+            int userId = int.Parse(userIdClaim);
+
+            try
+            {
+                var user = await _userService.GetById(userId);
+                return Ok(new
+                {
+                    user.Nickname,
+                    user.Email
+                });
+
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [Authorize]
+        [HttpGet("games")]
+        public async Task<IActionResult> GetGames()
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null) return Unauthorized();
+            int userId = int.Parse(userIdClaim);
+
+            try
+            {
+                var games = await _userService.GetGamesByUser(userId);
+                return Ok(games);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+
+        private void SetTokenCookie(string token)
+        {
+            Response.Cookies.Append("X-Access-Token", token, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = false,
+                SameSite = SameSiteMode.Lax,
+                Path = "/",
+                Expires = DateTime.UtcNow.AddHours(1)
+            });
+        }
+        //[Authorize]
+        [HttpGet("review/{gameId}")]
+        public async Task<IActionResult> GetGameById(Guid gameId)
+        {
+            try
+            {
+                Console.WriteLine("qweqweewq");
+                var game = await _userService.GetGameById(gameId);
+                Console.Write(game.ToString());
+                if(game == null)
+                {
+                    return NotFound(new { message = "Game not found" });
+                }
+                return Ok(game);
+            }
+            catch (Exception ex)
+            {
+                return NotFound(new { message = "Game not found" });
+
+            }
         }
     }
 }

@@ -6,6 +6,7 @@ namespace Chess.Model
     {
         public bool IsReady { get; set; } = false;
         public string Nickname { get; set; }
+        public int Id { get; set; }
 
         public PieceColor Color { get; set; }
 
@@ -15,8 +16,9 @@ namespace Chess.Model
 
 
 
-        public Player(string nickname, PieceColor color) {
+        public Player(string nickname, int id, PieceColor color) {
             this.Nickname = nickname;
+            this.Id = id;
             this.Color = color;
         }
     }

@@ -1,10 +1,14 @@
 ﻿using Chess.Enums;
 using Chess.Model;
 using Chess.Service;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using System.Drawing;
+using System.Net.NetworkInformation;
 
 namespace Chess.Hubs
 {
+    [Authorize]
     public class ChessHub : Hub
     {
         private readonly GameService _gameService;
@@ -38,6 +42,68 @@ namespace Chess.Hubs
                 Console.WriteLine($"[ERROR-HUB] Excepcion in JoinGame: {ex.Message}");
                 await Clients.Caller.SendAsync("JoinFailed", ex.Message);
             }
+        }
+
+        public async Task HandleRequestDraw (Guid gameId)
+        {
+            var game = _gameService.GetGame(gameId);
+            if (game == null) return;
+            if (game.CurrentGameState != GameState.Playing) return;
+            await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendDrawRequest");
+        }
+
+        public async Task HandleResignGame (Guid gameId)
+        {
+            var game = _gameService.GetGame(gameId);
+            if (game == null) return;
+            if (game.CurrentGameState != GameState.Playing) return;
+            var nickname = Context.User?.Identity?.Name;
+            if (nickname == null || nickname == "") return;
+            await _gameService.TryResignGame(gameId, nickname);
+            
+            await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
+
+            await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
+            {
+                white = game.WhitePlayer?.Nickname,
+                whiteIsReady = game.WhitePlayer?.IsReady,
+                whitePlayerOnline = game.WhitePlayer?.IsConnected,
+                blackPlayerOnline = game.BlackPlayer?.IsConnected,
+                black = game.BlackPlayer?.Nickname,
+                blackIsReady = game.BlackPlayer?.IsReady,
+                status = game.CurrentGameState.ToString(),
+                roomName = game.RoomName
+
+            });
+
+        }
+
+        public async Task HandleAcceptDraw(Guid gameId)
+        {
+            var game = _gameService.GetGame(gameId);
+            if (game == null) return;
+
+            if (game.Finish == GameOverReason.PLAYING)
+            {
+                await _gameService.TryDrawGame(gameId);
+                await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", GameOverReason.DRAW.ToString());
+
+                await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
+                {
+                    white = game.WhitePlayer?.Nickname,
+                    whiteIsReady = game.WhitePlayer?.IsReady,
+                    whitePlayerOnline = game.WhitePlayer?.IsConnected,
+                    blackPlayerOnline = game.BlackPlayer?.IsConnected,
+                    black = game.BlackPlayer?.Nickname,
+                    blackIsReady = game.BlackPlayer?.IsReady,
+                    status = game.CurrentGameState.ToString(),
+                    roomName = game.RoomName
+
+
+                });
+
+            }
+
         }
 
         public async Task SendPlayerReady(Guid gameId)
@@ -80,7 +146,9 @@ namespace Chess.Hubs
                 blackPlayerOnline = game.BlackPlayer?.IsConnected,
                 black = game.BlackPlayer?.Nickname,
                 blackIsReady = game.BlackPlayer?.IsReady,
-                status = game.CurrentGameState.ToString()
+                status = game.CurrentGameState.ToString(),
+                roomName = game.RoomName
+
             });
 
 
@@ -107,7 +175,9 @@ namespace Chess.Hubs
                     blackPlayerOnline = game.BlackPlayer?.IsConnected,
                     black = game.BlackPlayer?.Nickname,
                     blackIsReady = game.BlackPlayer?.IsReady,
-                    status = game.CurrentGameState.ToString()
+                    status = game.CurrentGameState.ToString(),
+                    roomName = game.RoomName
+
 
                 });
 
@@ -122,6 +192,7 @@ namespace Chess.Hubs
 
         public override async Task OnConnectedAsync()
         {
+            //jwt
             var nickname = Context.User?.Identity?.Name;
             var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
 
@@ -168,7 +239,9 @@ namespace Chess.Hubs
                         blackPlayerOnline = game.BlackPlayer?.IsConnected,
                         black = game.BlackPlayer?.Nickname,
                         blackIsReady = game.BlackPlayer?.IsReady,
-                        status = game.CurrentGameState.ToString()
+                        status = game.CurrentGameState.ToString(),
+                        roomName = game.RoomName
+
 
                     });
 
@@ -211,7 +284,9 @@ namespace Chess.Hubs
                     blackIsReady = game.BlackPlayer?.IsReady,
                     status = game.CurrentGameState.ToString(),
                     whitePlayerOnline = game.WhitePlayer?.IsConnected,
-                    blackPlayerOnline = game.BlackPlayer?.IsConnected
+                    blackPlayerOnline = game.BlackPlayer?.IsConnected,
+                    roomName = game.RoomName
+
 
                 });
 

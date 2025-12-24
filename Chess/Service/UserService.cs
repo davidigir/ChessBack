@@ -1,5 +1,6 @@
 ﻿using Chess.Db;
-using Chess.Model;
+using Chess.Dto;
+using Chess.Entity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -20,16 +21,17 @@ namespace Chess.Service
             _configuration = configuration;
         }
 
-        public async Task<User?> Register(string nickname, string password)
+        public async Task<UserEntity?> Register(string nickname, string password)
         {
 
             bool exists = await _context.Users.AnyAsync(u =>  u.Nickname == nickname);
             if (exists) throw new Exception("The nickname its already taken");
             string passwordHashed = BCrypt.Net.BCrypt.HashPassword(password);
-            var user = new User
+            var user = new UserEntity
             {
                 Nickname = nickname,
-                Password = passwordHashed
+                Password = passwordHashed,
+                Email = ""
             };
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
@@ -41,39 +43,141 @@ namespace Chess.Service
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Nickname == nickname);
             if (user == null) return null;
+
             bool isValid = BCrypt.Net.BCrypt.Verify(password, user.Password);
             if (!isValid) return null;
+
+            return GenerateToken(user);
+        }
+
+        public string GenerateToken(UserEntity user)
+        {
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]);
+
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(new[]
                 {
-                    new Claim(ClaimTypes.Name, user.Nickname),
-                    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
-                }),
+            new Claim(ClaimTypes.Name, user.Nickname),
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        }),
                 Expires = DateTime.UtcNow.AddHours(1),
                 Issuer = _configuration["Jwt:Issuer"],
                 Audience = _configuration["Jwt:Audience"],
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                SigningCredentials = new SigningCredentials(
+                    new SymmetricSecurityKey(key),
+                    SecurityAlgorithms.HmacSha256Signature)
             };
+
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
         }
 
-        public async Task<User?> GetById(int id)
+        public async Task<UserEntity?> GetById(int id)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u =>u.Id == id);
             if (user == null) throw new Exception("User not found");
             return user;
         }
 
-        public async Task<User?> GetByNickname(string nickname)
+        public async Task<UserEntity?> GetByNickname(string nickname)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Nickname == nickname);
             if (user == null) throw new Exception("User not found");
             return user;
         }
+        public async Task<UserEntity?> UpdateUser(int userId, UserUpdateDto model)
+        {
+            try
+            {
+                var user = await _context.Users.FindAsync(userId);
+
+                if (user == null) throw new Exception("User not found");
+
+                if (user.Nickname != model.Nickname)
+                {
+                    bool alreadyExists = await _context.Users.AnyAsync(u => u.Nickname == model.Nickname);
+                    if (alreadyExists) throw new Exception("Nickname already in use");
+
+                    user.Nickname = model.Nickname;
+                }
+
+                user.Email = model.Email;
+
+                if (!string.IsNullOrEmpty(model.Password))
+                {
+                    user.Password = BCrypt.Net.BCrypt.HashPassword(model.Password);
+                }
+
+                await _context.SaveChangesAsync();
+
+                return user;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error updating user: " + ex.Message);
+            }
+        }
+
+        public async Task<Object> GetGamesByUser(int userId)
+        {
+            try
+            {
+                var games = await _context.Games
+                    .Include(g => g.WhitePlayer)
+                    .Include(g => g.BlackPlayer)
+                    .Where(g => g.WhitePlayerId == userId || g.BlackPlayerId == userId)
+                    .OrderByDescending(g => g.CreatedAt)
+                    .Select(g => new {
+                        g.Id,
+                        g.CreatedAt,
+                        g.Result,
+                        g.PgnHistory,
+                        // Proyectamos solo lo necesario de los jugadores
+                        WhitePlayer = new { g.WhitePlayer.Id, g.WhitePlayer.Nickname },
+                        BlackPlayer = new { g.BlackPlayer.Id, g.BlackPlayer.Nickname },
+                        g.WhitePlayerId,
+                        g.BlackPlayerId
+                    })
+                    .ToListAsync();
+
+                return games;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error retrieving games: " + ex.Message);
+            }
+        }
+
+        public async Task<object?> GetGameById(Guid gameId)
+        {
+            try
+            {
+                var game = await _context.Games
+                    .Include(g => g.WhitePlayer)
+                    .Include(g => g.BlackPlayer)
+                    .Where(g => g.Id == gameId)
+                    .Select(g => new {
+                        g.Id,
+                        g.CreatedAt,
+                        g.Result,
+                        g.PgnHistory,
+                        WhitePlayer = new { g.WhitePlayer.Id, g.WhitePlayer.Nickname },
+                        BlackPlayer = new { g.BlackPlayer.Id, g.BlackPlayer.Nickname },
+                        g.WhitePlayerId,
+                        g.BlackPlayerId
+                    })
+                    .FirstOrDefaultAsync();
+
+                return game;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error retrieving game: " + ex.Message);
+            }
+        }
+
 
     }
 }

@@ -63,7 +63,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnMessageReceived = context =>
             {
-                // Extraemos el token de la cookie que llamamos "chess_token"
                 var accessToken = context.Request.Cookies["X-Access-Token"];
                 var path = context.HttpContext.Request.Path;
 

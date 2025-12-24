@@ -1,4 +1,5 @@
 ﻿using Chess.Dto;
+using Chess.Entity;
 using Chess.Model;
 using Chess.Service;
 using Microsoft.AspNetCore.Authorization;
@@ -24,9 +25,9 @@ namespace Chess.Controllers
         }
 
         [HttpPost("start")]
-        public async Task<ActionResult<Guid>> StartGame()
+        public async Task<ActionResult<Guid>> StartGame([FromBody] CreateGameRequestDto request)
         {
-            Game newGame = _gameService.StartNewGame();
+            Game newGame = _gameService.StartNewGame(request);
 
             return Ok(newGame.Id);
         }
@@ -60,7 +61,7 @@ namespace Chess.Controllers
         {
             if (request == null) return BadRequest("Datos de movimiento requeridos.");
 
-            bool success = _gameService.TryMakeMove(gameId, request.Move);
+            bool success = await _gameService.TryMakeMove(gameId, request.Move);
             if (success)
             {
                 return Ok("Movimento ejecutado");
@@ -72,33 +73,34 @@ namespace Chess.Controllers
             }
         }
         [HttpGet("games")]
-        public async Task<ActionResult<List<Guid>>> GamesList()
+        public ActionResult<List<GameSummaryDto>> GamesList()
         {
-            List<Guid> gameIds = _gameService.GetActiveGameIds();
+            var summaries = _gameService.GetActiveGamesSummary();
 
-            if (gameIds.Count == 0)
+            if (!summaries.Any())
             {
-                return NoContent();
+                return NoContent(); 
             }
 
-            return Ok(gameIds);
+            return Ok(summaries);
         }
 
         [Authorize]
         [HttpPost("join/{gameId}")]
-        public async Task<ActionResult<bool>> JoinGame(Guid gameId)
+        public async Task<ActionResult<bool>> JoinGame(Guid gameId, [FromBody] JoinRequestDto request)
         {
-            Console.WriteLine("Testtt");
 
             var nickname = User.Identity?.Name;
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null) return Unauthorized();
+            int playerId = int.Parse(userIdClaim);
             if (string.IsNullOrEmpty(nickname)) return Unauthorized();
-            Console.WriteLine("Test");
 
 
-            User? user = await _userService.GetByNickname(nickname);
-            if (user == null) return NotFound("User not found");
+            UserEntity? user = await _userService.GetByNickname(nickname);
+            if (user == null) return NotFound("User not found");    
 
-            bool joined = _gameService.JoinGame(gameId, nickname);
+            bool joined = _gameService.JoinGame(gameId, nickname, playerId, request);
 
             if (joined)
             {
@@ -106,10 +108,11 @@ namespace Chess.Controllers
             }
             else
             {
-                return BadRequest("Could not join: Game is full");
+                return Unauthorized("Game full or wrong credentials");
             }
 
 
         }
+        
     }
 }

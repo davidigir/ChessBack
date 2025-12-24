@@ -1,8 +1,12 @@
-﻿using Chess.Enums;
+﻿using Chess.Db;
+using Chess.Dto;
+using Chess.Entity;
+using Chess.Enums;
 using Chess.Hubs;
 using Chess.Model;
 using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
+using System.Threading.Tasks;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace Chess.Service
@@ -11,16 +15,19 @@ namespace Chess.Service
     {
 
         private readonly ConcurrentDictionary<Guid, Game> _activeGames = new ConcurrentDictionary<Guid, Game>();
-        private readonly Dictionary<string, Guid> _connectionToGameMap = new Dictionary<string, Guid>();
+        //private readonly Dictionary<string, Guid> _connectionToGameMap = new Dictionary<string, Guid>();
         private readonly object _lock = new object();
         private readonly ConcurrentDictionary<Guid, System.Timers.Timer> _reconnectionTimers = new();
 
         private readonly IHubContext<ChessHub> _hubContext;
+        private readonly IServiceScopeFactory _scopeFactory;
+
         
 
-        public GameService(IHubContext<ChessHub> hubContext)
+        public GameService(IHubContext<ChessHub> hubContext, IServiceScopeFactory scopeFactory)
         {
             _hubContext = hubContext;
+            _scopeFactory = scopeFactory;
         }
 
 
@@ -68,11 +75,15 @@ namespace Chess.Service
             return stringMoves;
         }
 
-        public Game StartNewGame()
+        public Game StartNewGame(CreateGameRequestDto request)
         {
             Game newGame = new Game();
             Guid gameId = Guid.NewGuid();
             newGame.Id = gameId;
+            if (!string.IsNullOrEmpty(request.Password)) newGame.SetPassword(request.Password);
+
+            if (!string.IsNullOrEmpty(request.RoomName)) newGame.RoomName = request.RoomName;
+
 
             if (_activeGames.TryAdd(gameId, newGame))
             {
@@ -112,17 +123,90 @@ namespace Chess.Service
             return _activeGames.Keys.ToList();
         }
 
-        public bool TryMakeMove(Guid gameId, string move)
+        public async Task<bool> TryMakeMove(Guid gameId, string move)
         {
             Game game = GetGame(gameId);
 
-            if (game == null)
-            {
-                Console.WriteLine($"Error: Game {gameId} not found.");
-                return false;
-            }
+            if (game == null) return false;
 
-            return game.MakeMove(move);
+            lock (_lock) 
+            {
+                if (game.CurrentGameState == GameState.Finished)
+                {
+                    return false; 
+                }
+
+                bool moveSuccess = game.MakeMove(move);
+
+                if (moveSuccess)
+                {
+                    //game.MovesHistory.Add(move);
+
+                    if (game.CurrentGameState == GameState.Finished)
+                    {
+                        _ = SaveGameToDatabase(gameId);
+                        //we need to remove the game from active games to save ram
+                        //_activeGames.TryRemove(gameId, out _);
+                    }
+                }
+
+                return moveSuccess;
+            }
+        }
+
+        public async Task TryDrawGame(Guid gameId)
+        {
+            Game game = GetGame(gameId);
+
+            if (game == null) return;
+
+            lock (_lock)
+            {
+                if (game.CurrentGameState == GameState.Finished)
+                {
+                    return;
+                }
+
+                game.CurrentGameState = GameState.Finished;
+                game.Finish = GameOverReason.DRAW;
+
+                _ = SaveGameToDatabase(gameId);
+                _activeGames.TryRemove(gameId, out _);
+              
+            }
+        }
+
+        public async Task TryResignGame(Guid gameId, string nickname)
+        {
+            Game game = GetGame(gameId);
+
+            if (game == null) return;
+
+            lock (_lock)
+            {
+                if (game.CurrentGameState == GameState.Finished)
+                {
+                    return;
+                }
+
+                game.CurrentGameState = GameState.Finished;
+                if (game.WhitePlayer?.Nickname == nickname)
+                {
+                    game.Finish = GameOverReason.WHITE_SURRENDERS;
+
+
+                }
+                else if (game.BlackPlayer?.Nickname == nickname)
+                {
+
+                    game.Finish = GameOverReason.BLACK_SURRENDERS;
+
+                }
+
+                _ = SaveGameToDatabase(gameId);
+                _activeGames.TryRemove(gameId, out _);
+
+            }
         }
 
 
@@ -152,6 +236,7 @@ namespace Chess.Service
             else return "";
         }
 
+        /*** QUIZA DEBERIA NECESITAR ESTO MAS ADELANTE
         public Guid? GetGameIdByConnectionId(string connectionId)
         {
             if (_connectionToGameMap.TryGetValue(connectionId, out var gameId))
@@ -161,12 +246,22 @@ namespace Chess.Service
             return null;
         }
 
+        **/
 
 
-        public bool JoinGame(Guid gameId, string nickname)
+
+        public bool JoinGame(Guid gameId, string nickname, int playerId, JoinRequestDto request)
         {
             Game game = this.GetGame(gameId);
             if (game == null) return false;
+
+            if (game.IsPrivate && !game.CheckPassword(request.Password))
+            {
+                return false;
+                
+            }
+
+
             lock (_lock)
             {
                 //if (game.WhitePlayer != null && game.BlackPlayer != null) return false;
@@ -183,14 +278,14 @@ namespace Chess.Service
                 }
                 if (game.WhitePlayer == null)
                 {
-                    game.WhitePlayer = new Player(nickname, PieceColor.White);
+                    game.WhitePlayer = new Player(nickname, playerId, PieceColor.White);
                     Console.WriteLine($"Jugador {nickname}");
                     return true;
 
                 }
                 else if (game.BlackPlayer == null)
                 {
-                    game.BlackPlayer = new Player(nickname, PieceColor.Black);
+                    game.BlackPlayer = new Player(nickname, playerId, PieceColor.Black);
                     Console.WriteLine($"Jugador {nickname}");
 
                     return true;
@@ -303,10 +398,20 @@ namespace Chess.Service
                 status = game.CurrentGameState.ToString(),
                 whitePlayerOnline = game.WhitePlayer?.IsConnected,
                 blackPlayerOnline = game.BlackPlayer?.IsConnected,
+                roomName = game.RoomName
+
 
             });
 
             await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
+            //we need to save the game in the db
+
+            await SaveGameToDatabase(gameId);
+            //we need to remove the game from active games to save ram
+
+            _activeGames.TryRemove(gameId, out _);
+
+
         }
 
         public void StopTimeoutTimer(Guid gameId)
@@ -319,4 +424,43 @@ namespace Chess.Service
                 Console.WriteLine("Player reconected");
             }
         }
+
+        public async Task SaveGameToDatabase(Guid gameId)
+        {
+            var game = GetGame(gameId);
+            if (game == null) return;
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ChessDbContext>();
+                var gameRecord = new GameEntity
+                {
+                    Id = game.Id,
+                    WhitePlayerId = game.WhitePlayer.Id,
+                    BlackPlayerId = game.BlackPlayer.Id,
+                    PgnHistory = string.Join(",", game.MovesHistory),
+                    Result = game.Finish.ToString(),
+                    CreatedAt = DateTime.UtcNow,
+                };
+                context.Games.Add(gameRecord);
+                await context.SaveChangesAsync();
+                Console.WriteLine("[BD]");
+            }
+        }
+
+        public List<GameSummaryDto> GetActiveGamesSummary()
+        {
+            return _activeGames.Select(g => new GameSummaryDto
+            {
+                GameId = g.Key,
+                RoomName = g.Value.RoomName ?? "",
+                IsPrivate = g.Value.IsPrivate,
+                Status = g.Value.CurrentGameState.ToString(),
+                PlayerCount = (g.Value.WhitePlayer != null ? 1 : 0) +
+                              (g.Value.BlackPlayer != null ? 1 : 0),
+                WhitePlayer = g.Value.WhitePlayer?.Nickname ?? "Waiting...",
+                BlackPlayer = g.Value.BlackPlayer?.Nickname ?? "Waiting..."
+
+            }).ToList();
+        }
+
     } }

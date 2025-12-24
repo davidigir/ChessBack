@@ -1,13 +1,23 @@
-﻿using Chess.Model;
+﻿using Chess.Dto;
+using Chess.Entity;
 
 namespace Chess.Service
 {
     public interface IUserService
     {
-        Task<User?> Register(string nickname, string password);
+        Task<UserEntity?> Register(string nickname, string password);
         Task<string?> Login(string nickname, string password);
-        Task<User?> GetById(int id);
-        Task<User?> GetByNickname(string nickname);
+        Task<UserEntity?> GetById(int id);
+        Task<UserEntity?> GetByNickname(string nickname);
+        Task<UserEntity?> UpdateUser(int userId, UserUpdateDto model);
+        string GenerateToken(UserEntity user);
+        Task<Object> GetGamesByUser(int userId);
+        Task<object?> GetGameById(Guid gameId);
+
+
+
+
+
 
     }
 }

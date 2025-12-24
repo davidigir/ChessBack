@@ -8,6 +8,14 @@ namespace Chess.Model
     {
 
         public Guid Id { get; set; }
+
+        public string? PasswordHash { get; set; }
+
+        public bool IsPrivate => !string.IsNullOrEmpty(PasswordHash);
+
+        public string? RoomName { get; set; }
+
+
         public Board Board { get; set; }
         public Player? WhitePlayer { get; set; }
         public Player? BlackPlayer { get; set; }
@@ -45,6 +53,23 @@ namespace Chess.Model
         }
 
         
+
+
+        public void SetPassword(string password)
+        {
+            if (string.IsNullOrEmpty(password)) return;
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+            PasswordHash = Convert.ToBase64String(bytes);
+        }
+
+        public bool CheckPassword(string password)
+        {
+            if (!IsPrivate) return true;
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+            return PasswordHash == Convert.ToBase64String(bytes);
+        }
 
         public bool MakeMove(string move)
         {
