@@ -173,5 +173,24 @@ namespace Chess.Controllers
 
             }
         }
+        [Authorize]
+        [HttpGet("stats")]
+        public async Task<IActionResult> GetUserStats()
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null) return Unauthorized();
+            int userId = int.Parse(userIdClaim);
+
+            try
+            {
+                var stats = await _userService.GetStatsById(userId);
+                return Ok(stats);
+
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

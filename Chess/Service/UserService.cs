@@ -178,6 +178,58 @@ namespace Chess.Service
             }
         }
 
+        public async Task<StatsDto> GetStatsById(int userId)
+        {
+            try
+            {
+                var stats = await _context.Games
+                    .Where(g => g.WhitePlayerId == userId || g.BlackPlayerId == userId)
+                    .GroupBy(g => 1)
+                    .Select(group => new
+                    {
+                        TotalGames = group.Count(),
+                        TotalWins = group.Count(g =>
+                            (g.WhitePlayerId == userId && g.Result == "WHITE_WINS") ||
+                            (g.BlackPlayerId == userId && g.Result == "BLACK_WINS")),
+                        WhiteWins = group.Count(g => g.WhitePlayerId == userId && g.Result == "WHITE_WINS"),
+                        BlackWins = group.Count(g => g.BlackPlayerId == userId && g.Result == "BLACK_WINS"),
+                        WhiteGames = group.Count(g => g.WhitePlayerId == userId),
+                        BlackGames = group.Count(g => g.BlackPlayerId == userId),
+                        Draws = group.Count(g => g.Result == "DRAW"),
+                        Losses = group.Count(g =>
+                            (g.Result == "BLACK_WINS" && g.WhitePlayerId == userId) ||
+                            (g.Result == "WHITE_WINS" && g.BlackPlayerId == userId))
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (stats == null || stats.TotalGames == 0)
+                {
+                    return new StatsDto { TotalGames = 0 };
+                }
+
+                return new StatsDto
+                {
+                    TotalGames = stats.TotalGames,
+                    TotalWins = stats.TotalWins,
+                    TotalDraws = stats.Draws,
+                    TotalLosses = stats.Losses,
+                    Winrate = Math.Round((double)stats.TotalWins / stats.TotalGames * 100, 2),
+
+                    BlackWinrate = stats.BlackGames > 0
+                        ? Math.Round((double)stats.BlackWins / stats.BlackGames * 100, 2)
+                        : 0,
+
+                    WhiteWinrate = stats.WhiteGames > 0
+                        ? Math.Round((double)stats.WhiteWins / stats.WhiteGames * 100, 2)
+                        : 0
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error calculating statistics");
+            }
+        }
+
 
     }
 }

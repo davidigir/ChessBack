@@ -13,6 +13,8 @@ namespace Chess.Service
         string GenerateToken(UserEntity user);
         Task<Object> GetGamesByUser(int userId);
         Task<object?> GetGameById(Guid gameId);
+        Task<StatsDto> GetStatsById(int userId);
+
 
 
 
