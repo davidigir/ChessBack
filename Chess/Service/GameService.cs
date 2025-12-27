@@ -7,6 +7,7 @@ using Chess.Model;
 using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
+using static Azure.Core.HttpHeader;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace Chess.Service
@@ -247,6 +248,14 @@ namespace Chess.Service
         }
 
         **/
+        public void DeleteGame(Guid gameId)
+        {
+            if (_activeGames.TryRemove(gameId, out var game))
+            {
+                game.CleanTimer?.Dispose();
+                Console.WriteLine($"Game {gameId} Deleted by inactivity.");
+            }
+        }
 
 
 
@@ -255,48 +264,43 @@ namespace Chess.Service
             Game game = this.GetGame(gameId);
             if (game == null) return false;
 
-            if (game.IsPrivate && !game.CheckPassword(request.Password))
-            {
-                return false;
-                
-            }
-
+            if (game.IsPrivate && !game.CheckPassword(request.Password)) return false;
 
             lock (_lock)
             {
-                //if (game.WhitePlayer != null && game.BlackPlayer != null) return false;
-                if(game.WhitePlayer != null && game.WhitePlayer.Nickname == nickname && !game.WhitePlayer.IsConnected)
-                {
-                    //StopTimeoutTimer(gameId);
+                bool joined = false;
 
-                    return true;
-                }
-                if (game.BlackPlayer != null && game.BlackPlayer.Nickname == nickname && !game.BlackPlayer.IsConnected)
+                if ((game.WhitePlayer?.Id == playerId) || (game.BlackPlayer?.Id == playerId))
                 {
-                    //StopTimeoutTimer(gameId);
-                    return true;
+                    Console.WriteLine($"Jugador {nickname} re-uniendo...");
+                    joined = true;
                 }
-                if (game.WhitePlayer == null)
+                else if (game.WhitePlayer == null)
                 {
                     game.WhitePlayer = new Player(nickname, playerId, PieceColor.White);
-                    Console.WriteLine($"Jugador {nickname}");
-                    return true;
-
+                    Console.WriteLine($"Jugador {nickname} unido como BLANCAS");
+                    joined = true;
                 }
                 else if (game.BlackPlayer == null)
                 {
                     game.BlackPlayer = new Player(nickname, playerId, PieceColor.Black);
-                    Console.WriteLine($"Jugador {nickname}");
+                    Console.WriteLine($"Jugador {nickname} unido como NEGRAS");
+                    joined = true;
+                }
 
+                if (joined)
+                {
+                    game.CleanTimer?.Dispose();
+                    game.CleanTimer = null;
                     return true;
                 }
-                Console.WriteLine("Te vas fuera");
+
+                Console.WriteLine("Acceso denegado: Partida llena.");
                 return false;
             }
-
         }
 
-      
+
         public void HandlePlayerDisconnection(Guid gameId, string nickname)
         {
             lock (_lock){
@@ -331,6 +335,16 @@ namespace Chess.Service
                     if (player != null) player.IsConnected = false;
                     StartTimeoutTimer(gameId);
 
+                }
+
+                if (game.WhitePlayer == null && game.BlackPlayer == null)
+                {
+                    game.CleanTimer = new System.Threading.Timer((state) =>
+                    {
+                        DeleteGame(gameId);
+
+                    }, null, TimeSpan.FromSeconds(30), Timeout.InfiniteTimeSpan
+                    );
                 }
 
 

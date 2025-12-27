@@ -30,6 +30,8 @@ namespace Chess.Model
 
         public List<string> MovesHistory { get; set; } = new List<string>();
 
+        public System.Threading.Timer? CleanTimer { get; set; }
+
 
         //we can implement smtg to add viewers to the game
 

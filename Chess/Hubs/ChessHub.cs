@@ -52,6 +52,14 @@ namespace Chess.Hubs
             await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendDrawRequest");
         }
 
+        public async Task HandleRequestRematch (Guid gameId)
+        {           
+            //await Clients.Caller.SendAsync("CreateRematchRoom");
+            await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendRematchRequest");
+
+
+        }
+
         public async Task HandleResignGame (Guid gameId)
         {
             var game = _gameService.GetGame(gameId);
@@ -104,6 +112,19 @@ namespace Chess.Hubs
 
             }
 
+        }
+
+        public async Task HandleAcceptRematch(Guid gameId)
+        {
+            var request = new Dto.CreateGameRequestDto
+            {
+                RoomName = "Rematch",
+                Password = "123"
+            };
+            
+            Game game = _gameService.StartNewGame(request);
+
+            await Clients.Group(gameId.ToString()).SendAsync("HandleJoinGameByRematch", game.Id);
         }
 
         public async Task SendPlayerReady(Guid gameId)
