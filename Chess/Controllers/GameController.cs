@@ -36,10 +36,10 @@ namespace Chess.Controllers
         public async Task<ActionResult<String>> DisplayGame(Guid gameId)
         {
             Game game = _gameService.GetGame(gameId);
-            if (game == null) return NotFound($"Partida {gameId} no encontrada");
+            if (game == null) return NotFound($"Game {gameId} not found");
 
             game.Board.DisplayBoard();
-            return Ok($"Mostrando {gameId}");
+            return Ok($"Showing {gameId}");
         }
 
 
@@ -48,10 +48,10 @@ namespace Chess.Controllers
         {
 
             Game game = _gameService.GetGame(gameId);
-            if (game == null) return NotFound($"Partida {gameId} no encontrada");
+            if (game == null) return NotFound($"Game {gameId} not found");
             game.Board.GetFenPlacement();
 
-            return Ok($"FEN del game {gameId} mostrado");
+            return Ok($"FEN {gameId}");
 
 
 
@@ -59,17 +59,17 @@ namespace Chess.Controllers
         [HttpPost("move/{gameId}")]
         public async Task<ActionResult<String>> MakeMove(Guid gameId, [FromBody] MoveRequestDto request)
         {
-            if (request == null) return BadRequest("Datos de movimiento requeridos.");
+            if (request == null) return BadRequest("Bad reqyest");
 
             bool success = await _gameService.TryMakeMove(gameId, request.Move);
             if (success)
             {
-                return Ok("Movimento ejecutado");
+                return Ok("Sending Move");
 
             }
             else
             {
-                return BadRequest("Movimiento Ilegal");
+                return BadRequest("Ilegal Move");
             }
         }
         [HttpGet("games")]
@@ -100,7 +100,9 @@ namespace Chess.Controllers
             UserEntity? user = await _userService.GetByNickname(nickname);
             if (user == null) return NotFound("User not found");    
 
-            bool joined = _gameService.JoinGame(gameId, nickname, playerId, request);
+
+
+            bool joined = _gameService.JoinGame(gameId, nickname, playerId, user.Elo, request);
 
             if (joined)
             {

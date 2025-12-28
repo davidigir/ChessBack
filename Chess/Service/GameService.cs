@@ -6,6 +6,7 @@ using Chess.Hubs;
 using Chess.Model;
 using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
+using System.Reflection.Metadata;
 using System.Threading.Tasks;
 using static Azure.Core.HttpHeader;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
@@ -16,6 +17,8 @@ namespace Chess.Service
     {
 
         private readonly ConcurrentDictionary<Guid, Game> _activeGames = new ConcurrentDictionary<Guid, Game>();
+        private readonly ConcurrentDictionary<Guid, Game> _oldGames = new ConcurrentDictionary<Guid, Game>();
+
         //private readonly Dictionary<string, Guid> _connectionToGameMap = new Dictionary<string, Guid>();
         private readonly object _lock = new object();
         private readonly ConcurrentDictionary<Guid, System.Timers.Timer> _reconnectionTimers = new();
@@ -97,9 +100,58 @@ namespace Chess.Service
             }
         }
 
+        public Game StartRematchGame(Guid oldGameId, CreateGameRequestDto request)
+        {
+            var oldGame = GetOldGame(oldGameId);
+            if (oldGame == null) throw new Exception("Old game not found");
+
+            var newGame = new Game();
+            Guid newId = Guid.NewGuid();
+            newGame.Id = newId;
+
+            newGame.RoomName = !string.IsNullOrEmpty(request.RoomName) ? request.RoomName : oldGame.RoomName;
+            if (!string.IsNullOrEmpty(request.Password)) newGame.SetPassword(request.Password);
+
+            lock (_lock)
+            {
+                if (oldGame.BlackPlayer != null)
+                {
+                    newGame.WhitePlayer = new Player(
+                        oldGame.BlackPlayer.Nickname,
+                        oldGame.BlackPlayer.Id,
+                        oldGame.BlackPlayer.Elo,
+                        PieceColor.White
+                    );
+                }
+
+                if (oldGame.WhitePlayer != null)
+                {
+                    newGame.BlackPlayer = new Player(
+                        oldGame.WhitePlayer.Nickname,
+                        oldGame.WhitePlayer.Id,
+                        oldGame.WhitePlayer.Elo,
+                        PieceColor.Black
+                    );
+                }
+            }
+
+            if (_activeGames.TryAdd(newId, newGame))
+            {
+                Console.WriteLine($"Rematch started: {oldGameId} -> {newId}");
+                return newGame;
+            }
+
+            throw new InvalidOperationException("Failed to start rematch.");
+        }
+
         public Game GetGame(Guid gameId)
         {
             _activeGames.TryGetValue(gameId, out Game game);
+            return game;
+        }
+        public Game GetOldGame(Guid gameId)
+        {
+            _oldGames.TryGetValue(gameId, out Game game);
             return game;
         }
 
@@ -127,39 +179,67 @@ namespace Chess.Service
         public async Task<bool> TryMakeMove(Guid gameId, string move)
         {
             Game game = GetGame(gameId);
-
             if (game == null) return false;
 
-            lock (_lock) 
+            // Esta es nuestra "bandera"
+            bool shouldFinalize = false;
+            bool moveSuccess = false;
+
+            lock (_lock)
             {
-                if (game.CurrentGameState == GameState.Finished)
+                if (game.CurrentGameState == GameState.Finished) return false;
+
+                moveSuccess = game.MakeMove(move);
+
+                if (moveSuccess && game.CurrentGameState == GameState.Finished)
                 {
-                    return false; 
+                    shouldFinalize = true;
                 }
+            } 
 
-                bool moveSuccess = game.MakeMove(move);
-
-                if (moveSuccess)
-                {
-                    //game.MovesHistory.Add(move);
-
-                    if (game.CurrentGameState == GameState.Finished)
-                    {
-                        _ = SaveGameToDatabase(gameId);
-                        //we need to remove the game from active games to save ram
-                        //_activeGames.TryRemove(gameId, out _);
-                    }
-                }
-
-                return moveSuccess;
+            if (shouldFinalize)
+            {
+                await HandleFinishGame(gameId, game);
             }
+
+            return moveSuccess;
         }
 
+        private async Task HandleFinishGame(Guid gameId, Game game)
+        {
+            try
+            {
+                double whiteScore = 0.5;
+                if (game.Finish == GameOverReason.WHITE_WINS) whiteScore = 1.0;
+                else if (game.Finish == GameOverReason.BLACK_WINS) whiteScore = 0.0;
+
+                var (newWhite, newBlack) = EloCalculator.GetNewRatings(
+                    game.WhitePlayer.Elo,
+                    game.BlackPlayer.Elo,
+                    whiteScore
+                );
+
+                game.WhitePlayer.Elo = newWhite;
+                game.BlackPlayer.Elo = newBlack;
+
+                await SaveGameToDatabase(gameId);
+
+                _oldGames.TryAdd(gameId, game);
+
+                //add timer and dont delete it instant
+                // _activeGames.TryRemove(gameId, out _); 
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to finalize game {gameId}: {ex.Message}");
+            }
+        }
         public async Task TryDrawGame(Guid gameId)
         {
             Game game = GetGame(gameId);
 
             if (game == null) return;
+            bool handle = false;
 
             lock (_lock)
             {
@@ -171,10 +251,11 @@ namespace Chess.Service
                 game.CurrentGameState = GameState.Finished;
                 game.Finish = GameOverReason.DRAW;
 
-                _ = SaveGameToDatabase(gameId);
-                _activeGames.TryRemove(gameId, out _);
-              
+
+                handle = true;
             }
+            if (handle) await HandleFinishGame(gameId, game);
+            
         }
 
         public async Task TryResignGame(Guid gameId, string nickname)
@@ -182,6 +263,7 @@ namespace Chess.Service
             Game game = GetGame(gameId);
 
             if (game == null) return;
+            bool handler = false;
 
             lock (_lock)
             {
@@ -204,10 +286,12 @@ namespace Chess.Service
 
                 }
 
-                _ = SaveGameToDatabase(gameId);
-                _activeGames.TryRemove(gameId, out _);
+                handler = true;
+
 
             }
+            if (handler) await HandleFinishGame(gameId, game);
+
         }
 
 
@@ -259,7 +343,7 @@ namespace Chess.Service
 
 
 
-        public bool JoinGame(Guid gameId, string nickname, int playerId, JoinRequestDto request)
+        public bool JoinGame(Guid gameId, string nickname, int playerId, int playerElo, JoinRequestDto request)
         {
             Game game = this.GetGame(gameId);
             if (game == null) return false;
@@ -272,19 +356,20 @@ namespace Chess.Service
 
                 if ((game.WhitePlayer?.Id == playerId) || (game.BlackPlayer?.Id == playerId))
                 {
-                    Console.WriteLine($"Jugador {nickname} re-uniendo...");
+                    Console.WriteLine($"Player {nickname} Re conected");
                     joined = true;
                 }
                 else if (game.WhitePlayer == null)
                 {
-                    game.WhitePlayer = new Player(nickname, playerId, PieceColor.White);
-                    Console.WriteLine($"Jugador {nickname} unido como BLANCAS");
+                    
+                    game.WhitePlayer = new Player(nickname, playerId, playerElo, PieceColor.White);
+                    Console.WriteLine($"Player {nickname} Playing with white pieces");
                     joined = true;
                 }
                 else if (game.BlackPlayer == null)
                 {
-                    game.BlackPlayer = new Player(nickname, playerId, PieceColor.Black);
-                    Console.WriteLine($"Jugador {nickname} unido como NEGRAS");
+                    game.BlackPlayer = new Player(nickname, playerId, playerElo, PieceColor.Black);
+                    Console.WriteLine($"Player {nickname} playing with black pieces");
                     joined = true;
                 }
 
@@ -295,7 +380,7 @@ namespace Chess.Service
                     return true;
                 }
 
-                Console.WriteLine("Acceso denegado: Partida llena.");
+                Console.WriteLine("Game Full");
                 return false;
             }
         }
@@ -367,13 +452,13 @@ namespace Chess.Service
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error en timeout: {ex.Message}");
+                    Console.WriteLine($"Error in the timeout: {ex.Message}");
                 }
             };
 
             _reconnectionTimers[gameId] = timer;
             timer.Start();
-            Console.WriteLine("Timer iniciado");
+            Console.WriteLine("Timer Init");
 
 
         }
@@ -382,6 +467,7 @@ namespace Chess.Service
         {
             var game = GetGame(gameId);
             if (game == null) return;
+            bool handler = false;
 
             lock (_lock)
             {
@@ -402,6 +488,8 @@ namespace Chess.Service
 
                 Console.WriteLine(game.CurrentGameState.ToString());
                 Console.WriteLine(game.Finish.ToString());
+                handler = true;
+
             }
             await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
             {
@@ -420,17 +508,13 @@ namespace Chess.Service
             await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
             //we need to save the game in the db
 
-            await SaveGameToDatabase(gameId);
-            //we need to remove the game from active games to save ram
-
-            _activeGames.TryRemove(gameId, out _);
+            if (handler) await HandleFinishGame(gameId, game);
 
 
         }
 
         public void StopTimeoutTimer(Guid gameId)
         {
-            Console.WriteLine("Intentando parar");
             if (_reconnectionTimers.TryRemove(gameId, out System.Timers.Timer timer))
             {
                 timer.Stop();
@@ -451,13 +535,20 @@ namespace Chess.Service
                     Id = game.Id,
                     WhitePlayerId = game.WhitePlayer.Id,
                     BlackPlayerId = game.BlackPlayer.Id,
+                    //TODO AÑADIR ELO
                     PgnHistory = string.Join(",", game.MovesHistory),
                     Result = game.Finish.ToString(),
                     CreatedAt = DateTime.UtcNow,
                 };
+                var whiteUser = await context.Users.FindAsync(game.WhitePlayer.Id);
+                whiteUser.Elo = game.WhitePlayer.Elo;
+                var blackUser = await context.Users.FindAsync(game.BlackPlayer.Id);
+                blackUser.Elo = game.BlackPlayer.Elo;
+
+
                 context.Games.Add(gameRecord);
+
                 await context.SaveChangesAsync();
-                Console.WriteLine("[BD]");
             }
         }
 

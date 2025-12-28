@@ -87,8 +87,19 @@ namespace Chess.Model
 
             if(MovementValidator.IsMoveValid(this.Board, source, destination))
             {
-                this.Board.Move(move);
-                this.MovesHistory.Add(move);
+                if (Board.Pieces[source.Y, source.X].PieceType == PieceType.King && Math.Abs(destination.X - source.X) == 2)
+                {
+                    //this is a castle
+                    string castleType = this.Board.PerformCastle(move);
+                    this.MovesHistory.Add(castleType);
+                }
+                else
+                {
+                    //this is a normal movement
+                    this.Board.Move(move);
+                    this.MovesHistory.Add(move);
+                }
+                
                 //now we should verify if the opposite player is in checkmate or stalemate
                 PieceColor oppositePlayerColor = MovementValidator.GetOppositeColor(this.CurrentTurn);
 

@@ -1,4 +1,5 @@
-﻿using Chess.Enums;
+﻿using Chess.Dto;
+using Chess.Enums;
 using Chess.Model;
 using Chess.Service;
 using Microsoft.AspNetCore.Authorization;
@@ -55,10 +56,21 @@ namespace Chess.Hubs
         public async Task HandleRequestRematch (Guid gameId)
         {           
             //await Clients.Caller.SendAsync("CreateRematchRoom");
+            var game = _gameService.GetOldGame(gameId);
+            if (game == null) return;
+            var nickname = Context.User?.Identity?.Name;
+            var rivalId = (game.WhitePlayer?.Nickname == nickname)
+        ? game.BlackPlayer?.ConnectionId
+        : game.WhitePlayer?.ConnectionId;
+            if (!string.IsNullOrEmpty(rivalId)) { 
+                await Clients.Client(rivalId).SendAsync("SendRematchRequest");
+            }else{
             await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendRematchRequest");
 
+    }
 
-        }
+
+}
 
         public async Task HandleResignGame (Guid gameId)
         {
@@ -71,18 +83,7 @@ namespace Chess.Hubs
             
             await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
 
-            await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
-            {
-                white = game.WhitePlayer?.Nickname,
-                whiteIsReady = game.WhitePlayer?.IsReady,
-                whitePlayerOnline = game.WhitePlayer?.IsConnected,
-                blackPlayerOnline = game.BlackPlayer?.IsConnected,
-                black = game.BlackPlayer?.Nickname,
-                blackIsReady = game.BlackPlayer?.IsReady,
-                status = game.CurrentGameState.ToString(),
-                roomName = game.RoomName
-
-            });
+            await NotifyGameStatus(gameId, game);
 
         }
 
@@ -96,19 +97,7 @@ namespace Chess.Hubs
                 await _gameService.TryDrawGame(gameId);
                 await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", GameOverReason.DRAW.ToString());
 
-                await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
-                {
-                    white = game.WhitePlayer?.Nickname,
-                    whiteIsReady = game.WhitePlayer?.IsReady,
-                    whitePlayerOnline = game.WhitePlayer?.IsConnected,
-                    blackPlayerOnline = game.BlackPlayer?.IsConnected,
-                    black = game.BlackPlayer?.Nickname,
-                    blackIsReady = game.BlackPlayer?.IsReady,
-                    status = game.CurrentGameState.ToString(),
-                    roomName = game.RoomName
-
-
-                });
+                await NotifyGameStatus(gameId, game);
 
             }
 
@@ -122,7 +111,7 @@ namespace Chess.Hubs
                 Password = "123"
             };
             
-            Game game = _gameService.StartNewGame(request);
+            Game game = _gameService.StartRematchGame(gameId, request);
 
             await Clients.Group(gameId.ToString()).SendAsync("HandleJoinGameByRematch", game.Id);
         }
@@ -159,18 +148,7 @@ namespace Chess.Hubs
                 nickname = nickname,
                 status = status
             });
-            await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
-            {
-                white = game.WhitePlayer?.Nickname,
-                whiteIsReady = game.WhitePlayer?.IsReady,
-                whitePlayerOnline = game.WhitePlayer?.IsConnected,
-                blackPlayerOnline = game.BlackPlayer?.IsConnected,
-                black = game.BlackPlayer?.Nickname,
-                blackIsReady = game.BlackPlayer?.IsReady,
-                status = game.CurrentGameState.ToString(),
-                roomName = game.RoomName
-
-            });
+            await NotifyGameStatus(gameId, game);
 
 
         }
@@ -188,19 +166,7 @@ namespace Chess.Hubs
                 await Clients.Group(groupName).SendAsync("GameOverReason", finishType.ToString());
                 var game = _gameService.GetGame(gameId);
 
-                await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
-                {
-                    white = game.WhitePlayer?.Nickname,
-                    whiteIsReady = game.WhitePlayer?.IsReady,
-                    whitePlayerOnline = game.WhitePlayer?.IsConnected,
-                    blackPlayerOnline = game.BlackPlayer?.IsConnected,
-                    black = game.BlackPlayer?.Nickname,
-                    blackIsReady = game.BlackPlayer?.IsReady,
-                    status = game.CurrentGameState.ToString(),
-                    roomName = game.RoomName
-
-
-                });
+                await NotifyGameStatus(gameId, game);
 
             }
             string fenBoard = _gameService.GetFenBoard(gameId);
@@ -252,19 +218,7 @@ namespace Chess.Hubs
                     });
                     await Clients.Group(gameId.ToString()).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
 
-                    await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
-                    {
-                        white = game.WhitePlayer?.Nickname,
-                        whiteIsReady = game.WhitePlayer?.IsReady,
-                        whitePlayerOnline = game.WhitePlayer?.IsConnected,
-                        blackPlayerOnline = game.BlackPlayer?.IsConnected,
-                        black = game.BlackPlayer?.Nickname,
-                        blackIsReady = game.BlackPlayer?.IsReady,
-                        status = game.CurrentGameState.ToString(),
-                        roomName = game.RoomName
-
-
-                    });
+                    await NotifyGameStatus(gameId, game);
 
                     string fenBoard = _gameService.GetFenBoard(gameId);
                     await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
@@ -291,30 +245,40 @@ namespace Chess.Hubs
                 
                     //Only discconect the player
                     _gameService.HandlePlayerDisconnection(gameId, nickname);
-                
-                    //Timeout 
+
+                //Timeout 
 
 
-                
 
-                await Clients.Group(gameId.ToString()).SendAsync("GameStatus", new
-                {
-                    white = game.WhitePlayer?.Nickname,
-                    whiteIsReady = game.WhitePlayer?.IsReady,
-                    black = game.BlackPlayer?.Nickname,
-                    blackIsReady = game.BlackPlayer?.IsReady,
-                    status = game.CurrentGameState.ToString(),
-                    whitePlayerOnline = game.WhitePlayer?.IsConnected,
-                    blackPlayerOnline = game.BlackPlayer?.IsConnected,
-                    roomName = game.RoomName
+                await NotifyGameStatus(gameId, game);
 
-
-                });
+               
 
             }
 
             await base.OnDisconnectedAsync(exception);
         }
 
+
+
+        private async Task NotifyGameStatus(Guid gameId, Game game)
+        {
+            var status = new GameStatusDto
+
+            {
+                White = game.WhitePlayer?.Nickname,
+                WhiteIsReady = game.WhitePlayer?.IsReady ?? false,
+                WhitePlayerOnline = game.WhitePlayer?.IsConnected ?? false,
+                WhitePlayerElo = game.WhitePlayer?.Elo ?? 0,
+                Black = game.BlackPlayer?.Nickname,
+                BlackPlayerElo = game.BlackPlayer?.Elo ?? 0,
+                BlackIsReady = game.BlackPlayer?.IsReady ?? false,
+                BlackPlayerOnline = game.BlackPlayer?.IsConnected ?? false,
+                Status = game.CurrentGameState.ToString(),
+                RoomName = game.RoomName
+            };
+
+            await Clients.Group(gameId.ToString()).SendAsync("GameStatus", status);
+        }
     }
 }

@@ -235,23 +235,52 @@ namespace Chess.Service
         public static bool IsKingMoveValid(Board board, Coordinate source, Coordinate destination)
         {
             Piece king = board.Pieces[source.Y, source.X] ?? Piece.NonePiece;
-            Piece targetPiece = board.Pieces[destination.Y, destination.X] ?? Piece.NonePiece;
-
 
             int deltaY = destination.Y - source.Y;
             int deltaX = destination.X - source.X;
 
             if (Math.Abs(deltaX) <= 1 && Math.Abs(deltaY) <= 1)
             {
-
-
                 return true;
-
             }
 
+            //castle
+            if (!king.HasMoved && Math.Abs(deltaX) == 2 && deltaY == 0)
+            {
+                int rookColumn = (deltaX > 0) ? 7 : 0;
+                Piece targetRook = board.Pieces[source.Y, rookColumn];
+
+                if (targetRook != null &&
+                    targetRook.PieceType == PieceType.Rook &&
+                    targetRook.PieceColor == king.PieceColor &&
+                    !targetRook.HasMoved)
+                {
+                    int step = (deltaX > 0) ? 1 : -1;
+
+                    //Path must be empty
+                    int currentX = source.X + step;
+                    while (currentX != rookColumn)
+                    {
+                        if ((board.Pieces[source.Y, currentX] != Piece.NonePiece))
+                            return false; 
+
+                        currentX += step;
+                    }
+
+                    // PAth musnt be under attack
+                    for (int i = 0; i <= 2; i++)
+                    {
+                        Coordinate checkPos = new Coordinate(source.X + (i * step), source.Y);
+                        PieceColor attackingColor = king.PieceColor == PieceColor.White ? PieceColor.Black : PieceColor.White;
+                        if (IsSquareUnderAttack(board, checkPos, attackingColor)) return false;
+                        
+                    }
+
+                    return true;  //Valid Castle
+                }
+            }
 
             return false;
-
         }
 
 

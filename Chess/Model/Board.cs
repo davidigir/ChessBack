@@ -104,6 +104,32 @@ namespace Chess.Model
             
         }
 
+        public string PerformCastle(string move)
+        {
+            string pos1 = move.Substring(0, 2);
+            string pos2 = move.Substring(2, 2);
+
+            Coordinate coord1 = Coordinate.FromAlgebraic(pos1); 
+            Coordinate coord2 = Coordinate.FromAlgebraic(pos2); 
+
+            Piece king = Pieces[coord1.Y, coord1.X];
+            Pieces[coord2.Y, coord2.X] = king;
+            Pieces[coord1.Y, coord1.X] = Piece.NonePiece;
+            king.HasMoved = true;
+
+            bool isKingside = coord2.X > coord1.X; 
+            int rookSourceX = isKingside ? 7 : 0;
+            int rookDestX = isKingside ? 5 : 3;
+
+            Piece rook = Pieces[coord1.Y, rookSourceX];
+            Pieces[coord1.Y, rookDestX] = rook;
+            Pieces[coord1.Y, rookSourceX] = Piece.NonePiece;
+
+            if (rook != null && rook != Piece.NonePiece) rook.HasMoved = true;
+
+            return isKingside ? "O-O" : "O-O-O";
+        }
+
 
         public string GetFenPlacement()
         {

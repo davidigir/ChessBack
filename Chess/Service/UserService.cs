@@ -134,7 +134,6 @@ namespace Chess.Service
                         g.CreatedAt,
                         g.Result,
                         g.PgnHistory,
-                        // Proyectamos solo lo necesario de los jugadores
                         WhitePlayer = new { g.WhitePlayer.Id, g.WhitePlayer.Nickname },
                         BlackPlayer = new { g.BlackPlayer.Id, g.BlackPlayer.Nickname },
                         g.WhitePlayerId,
@@ -182,6 +181,8 @@ namespace Chess.Service
         {
             try
             {
+                var user = await GetById(userId);
+                
                 var stats = await _context.Games
                     .Where(g => g.WhitePlayerId == userId || g.BlackPlayerId == userId)
                     .GroupBy(g => 1)
@@ -213,6 +214,7 @@ namespace Chess.Service
                     TotalWins = stats.TotalWins,
                     TotalDraws = stats.Draws,
                     TotalLosses = stats.Losses,
+                    Elo = user.Elo,
                     Winrate = Math.Round((double)stats.TotalWins / stats.TotalGames * 100, 2),
 
                     BlackWinrate = stats.BlackGames > 0

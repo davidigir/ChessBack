@@ -14,11 +14,13 @@ namespace Chess.Model
 
         public bool IsConnected { get; set; } = true;
 
+        public int Elo { get; set; }
 
 
-        public Player(string nickname, int id, PieceColor color) {
+        public Player(string nickname, int id, int elo, PieceColor color) {
             this.Nickname = nickname;
             this.Id = id;
+            this.Elo = elo;
             this.Color = color;
         }
     }

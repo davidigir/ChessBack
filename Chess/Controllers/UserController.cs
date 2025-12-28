@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace Chess.Controllers
 {
@@ -23,6 +24,10 @@ namespace Chess.Controllers
             {
                 var user = await _userService.Register(dto.Nickname, dto.Password);
                 if (user == null) return BadRequest("User has not been created");
+                var token = await _userService.Login(dto.Nickname, dto.Password);
+                if (token == null) return Unauthorized(new { message = "Bad Credentials" });
+                SetTokenCookie(token);
+
                 var response = new UserResponseDto(user.Id, user.Nickname);
                 return CreatedAtAction(nameof(GetUser), new { id = user.Id }, response);
 
@@ -64,11 +69,15 @@ namespace Chess.Controllers
         }
         [Authorize]
         [HttpGet("me")]
-        public IActionResult GetMe()
+        public async Task<IActionResult> GetMe()
         {
+            var user = await _userService.GetByNickname(
+                User.Identity?.Name
+                );
             return Ok(new
             {
-                username = User.Identity?.Name,
+                username = user.Nickname,
+                elo = user.Elo,
                 id = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             });
         }
@@ -191,6 +200,19 @@ namespace Chess.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+        }
+
+        [Authorize]
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout()
+        {
+            Response.Cookies.Delete("X-Access-Token", new CookieOptions
+            {
+                Path = "/",
+                Secure = true,
+                HttpOnly = false
+            });
+            return Ok(new { message = "Logged out" });
         }
     }
 }
