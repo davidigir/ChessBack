@@ -7,7 +7,7 @@ namespace Chess.Service
     public class MovementValidator
     {
 
-        public static bool IsMoveValid(Board board, Coordinate source, Coordinate destination)
+        public static bool IsMoveValid(Board board, Coordinate source, Coordinate destination, string lastMove)
         {
 
             if (source.X == destination.X && source.Y == destination.Y) return false;
@@ -23,7 +23,7 @@ namespace Chess.Service
             //specific validation
             bool isMoveValid = pieceToMove.PieceType switch
             {
-                Enums.PieceType.Pawn => IsPawnMoveValid(board, source, destination),
+                Enums.PieceType.Pawn => IsPawnMoveValid(board, source, destination, lastMove),
                 Enums.PieceType.Rook => IsRookMoveValid(board, source, destination),
                 Enums.PieceType.Queen => IsQueenMoveValid(board, source, destination),
                 Enums.PieceType.Knight => IsKnightMoveValid(board, source, destination),
@@ -85,7 +85,7 @@ namespace Chess.Service
                             for (int destX = 0; destX < 8; destX++)
                             {
                                 Coordinate destination = new Coordinate(destX, destY);
-                                if (IsMoveValid(board, source, destination))
+                                if (IsMoveValid(board, source, destination, ""))
                                 {
                                     return false;
                                 }
@@ -137,7 +137,7 @@ namespace Chess.Service
             //specific validation
             bool isMoveValid = pieceToMove.PieceType switch
             {
-                Enums.PieceType.Pawn => IsPawnMoveValid(board, source, destination),
+                Enums.PieceType.Pawn => IsPawnMoveValid(board, source, destination, ""),
                 Enums.PieceType.Rook => IsRookMoveValid(board, source, destination),
                 Enums.PieceType.Queen => IsQueenMoveValid(board, source, destination),
                 Enums.PieceType.Knight => IsKnightMoveValid(board, source, destination),
@@ -190,7 +190,7 @@ namespace Chess.Service
         }
 
 
-        public static bool IsPawnMoveValid(Board board, Coordinate source, Coordinate destination)
+        public static bool IsPawnMoveValid(Board board, Coordinate source, Coordinate destination, string lastMove)
         {
 
             Piece pawn = board.Pieces[source.Y, source.X] ?? Piece.NonePiece;
@@ -205,7 +205,16 @@ namespace Chess.Service
                 Math.Abs(deltaX) == 1 && deltaY * forwardDirection == 1
                 ) //meaning a capture
             {
-                if (targetPiece.IsPiece() && targetPiece.PieceColor != pawn.PieceColor) return true;
+                if (targetPiece.IsPiece() && targetPiece.PieceColor != pawn.PieceColor)
+                {
+                    return true;
+                }
+                if (!string.IsNullOrEmpty(lastMove) && lastMove.Length == 4)
+                {//passant capture logic
+                    if (IsPassantMoveValid(board, source, destination, lastMove)) return true;
+                   
+                }
+
 
                 return false;
             }
@@ -230,6 +239,46 @@ namespace Chess.Service
 
 
             return false;
+        }
+
+        public static bool IsPassantMoveValid(Board board, Coordinate source, Coordinate destination, string lastMove)
+        {
+            if (string.IsNullOrEmpty(lastMove) || lastMove.Length != 4) return false;
+            Piece pawn = board.Pieces[source.Y, source.X] ?? Piece.NonePiece;
+            Piece targetPiece = board.Pieces[destination.Y, destination.X] ?? Piece.NonePiece;
+
+            Coordinate lastMoveSource = Coordinate.FromAlgebraic(lastMove.Substring(0, 2));
+            Coordinate lastMoveDestination = Coordinate.FromAlgebraic(lastMove.Substring(2, 2));
+            Piece lastPiece = board.Pieces[lastMoveDestination.Y, lastMoveDestination.X] ?? Piece.NonePiece;
+
+            
+            //meaning a passant capture
+            if (lastPiece.PieceType == PieceType.Pawn &&
+                lastPiece.PieceColor != pawn.PieceColor &&
+                lastMoveDestination.X == destination.X &&
+                lastMoveDestination.Y == source.Y &&
+                Math.Abs(lastMoveDestination.Y - lastMoveSource.Y) == 2
+                )
+            {
+                return true;
+            };
+            return false;
+        }
+
+        public static bool IsThePawnInPromotingMode(Board board, Coordinate source, Coordinate destination)
+        {
+            Console.WriteLine("Estamos viendo si esto funciona");
+            Piece pawn = board.Pieces[source.Y, source.X] ?? Piece.NonePiece;
+            Piece targetPiece = board.Pieces[destination.Y, destination.X] ?? Piece.NonePiece;
+            Console.WriteLine($"{source.Y},{source.X}-{destination.Y},{destination.X}");
+            bool isWhitePromoting = pawn.PieceColor == PieceColor.White && destination.Y == 0;
+            bool isBlackPromoting = pawn.PieceColor == PieceColor.Black && destination.Y == 7;
+            if(isWhitePromoting || isBlackPromoting)
+            {
+                return true;
+            }
+            return false;
+
         }
 
         public static bool IsKingMoveValid(Board board, Coordinate source, Coordinate destination)

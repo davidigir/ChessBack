@@ -19,6 +19,11 @@ namespace Chess.Model
         public Board Board { get; set; }
         public Player? WhitePlayer { get; set; }
         public Player? BlackPlayer { get; set; }
+        public int EloChange { get; set; }
+        public int WhiteEloBefore { get; set; }
+        public int WhiteEloAfter { get; set; }
+        public int BlackEloBefore { get; set; }
+        public int BlackEloAfter { get; set; }
 
         public PieceColor CurrentTurn { get; private set; }
 
@@ -29,6 +34,7 @@ namespace Chess.Model
 
 
         public List<string> MovesHistory { get; set; } = new List<string>();
+        public string LastMove { get; set; } = "";
 
         public System.Threading.Timer? CleanTimer { get; set; }
 
@@ -73,6 +79,58 @@ namespace Chess.Model
             return PasswordHash == Convert.ToBase64String(bytes);
         }
 
+        public string PromotePiece(PieceType pieceType)
+        {
+            if (this.CurrentGameState != GameState.Promoting) return "";
+            string lastMove = this.LastMove;
+            if (lastMove == "") return "";
+            Coordinate destination = Coordinate.FromAlgebraic(lastMove.Substring(2, 2));
+            Piece pieceToPromote = Board.Pieces[destination.Y, destination.X];
+            if (pieceToPromote.PieceType != PieceType.Pawn) return "";
+            this.Board.Promote(pieceToPromote, pieceType);
+            lastMove = lastMove + pieceType.ToString().Substring(0, 1);
+
+            this.MovesHistory.Add(lastMove);
+
+            this.CurrentGameState = GameState.Playing;
+
+
+            PieceColor oppositePlayerColor = MovementValidator.GetOppositeColor(this.CurrentTurn);
+
+            bool isCheckStaleMate = MovementValidator.IsCheckStaleMate(this.Board, oppositePlayerColor);
+            bool isCheck = MovementValidator.IsTheEnemyKingUnderAttack(this.Board, this.CurrentTurn);
+
+            if (isCheckStaleMate && isCheck)
+            {
+                //checkmate
+                Console.WriteLine($"{oppositePlayerColor} Lose by checkmate");
+                if (oppositePlayerColor == PieceColor.Black) this.Finish = GameOverReason.WHITE_WINS;
+                else this.Finish = GameOverReason.BLACK_WINS;
+                this.CurrentGameState = GameState.Finished;
+
+
+            }
+            if (isCheckStaleMate && !isCheck)
+            {
+                //stalemate
+                Console.WriteLine("This is a Draw");
+                this.Finish = GameOverReason.STALEMATE;
+                this.CurrentGameState = GameState.Finished;
+
+            }
+            if (!isCheckStaleMate && isCheck)
+            {
+                //check
+                Console.WriteLine($"{oppositePlayerColor} is under check");
+
+            }
+            this.CurrentTurn = oppositePlayerColor;
+
+
+            return lastMove;
+
+        }
+
         public bool MakeMove(string move)
         {
             if (this.CurrentGameState != GameState.Playing) return false; //
@@ -85,7 +143,7 @@ namespace Chess.Model
                 return false;
             }
 
-            if(MovementValidator.IsMoveValid(this.Board, source, destination))
+            if(MovementValidator.IsMoveValid(this.Board, source, destination, this.LastMove))
             {
                 if (Board.Pieces[source.Y, source.X].PieceType == PieceType.King && Math.Abs(destination.X - source.X) == 2)
                 {
@@ -93,13 +151,34 @@ namespace Chess.Model
                     string castleType = this.Board.PerformCastle(move);
                     this.MovesHistory.Add(castleType);
                 }
+
+                else if (Board.Pieces[source.Y, source.X].PieceType == PieceType.Pawn &&
+                   MovementValidator.IsThePawnInPromotingMode(this.Board, source, destination))
+                {
+                    //Promoting state
+                    this.CurrentGameState = GameState.Promoting;
+                    //this.PendingPromotionMove = move;
+                    this.Board.Move(move);
+
+                    this.LastMove = move;
+                    return true;
+
+                }
+                else if ((Board.Pieces[source.Y, source.X].PieceType == PieceType.Pawn && MovementValidator.IsPassantMoveValid(this.Board, source, destination, this.LastMove)))
+                {
+                    this.Board.PerformPassantMove(move, this.LastMove);
+                    this.MovesHistory.Add(move + "e.p.");
+
+                }
                 else
                 {
-                    //this is a normal movement
+                    // Normal Move
                     this.Board.Move(move);
                     this.MovesHistory.Add(move);
                 }
-                
+                this.LastMove = move;
+
+
                 //now we should verify if the opposite player is in checkmate or stalemate
                 PieceColor oppositePlayerColor = MovementValidator.GetOppositeColor(this.CurrentTurn);
 

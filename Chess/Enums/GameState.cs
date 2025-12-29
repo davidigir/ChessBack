@@ -4,7 +4,8 @@
     {
         Waiting,
         Playing,
-        Finished
+        Finished,
+        Promoting
 
 
     }

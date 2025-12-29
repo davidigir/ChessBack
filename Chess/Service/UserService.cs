@@ -137,7 +137,11 @@ namespace Chess.Service
                         WhitePlayer = new { g.WhitePlayer.Id, g.WhitePlayer.Nickname },
                         BlackPlayer = new { g.BlackPlayer.Id, g.BlackPlayer.Nickname },
                         g.WhitePlayerId,
-                        g.BlackPlayerId
+                        g.BlackPlayerId,
+                        UserEloBefore = g.WhitePlayerId == userId ? g.WhiteEloBefore : g.BlackEloBefore,
+                        UserEloAfter = g.WhitePlayerId == userId ? g.WhiteEloAfter : g.BlackEloAfter,
+                        //elo is based on the whiteplayer point of view
+                        UserEloChange = g.WhitePlayerId == userId ? g.EloChange : (g.EloChange * -1)
                     })
                     .ToListAsync();
 

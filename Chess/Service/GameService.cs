@@ -26,7 +26,7 @@ namespace Chess.Service
         private readonly IHubContext<ChessHub> _hubContext;
         private readonly IServiceScopeFactory _scopeFactory;
 
-        
+
 
         public GameService(IHubContext<ChessHub> hubContext, IServiceScopeFactory scopeFactory)
         {
@@ -175,13 +175,41 @@ namespace Chess.Service
 
             return _activeGames.Keys.ToList();
         }
+        public async Task<string> TryPromotePiece(Guid gameId, PieceType piece)
+        {
+            Game game = GetGame(gameId);
+            if (game == null) return "";
+            bool shouldFinalize = false;
+            string movement = "";
+
+
+            lock (_lock)
+            {
+                if (game.CurrentGameState != GameState.Promoting) return "";
+                {
+                    movement = game.PromotePiece(piece);
+                    if (movement != "" && game.CurrentGameState == GameState.Finished)
+                    {
+                        shouldFinalize = true;
+                    }
+                }
+
+
+            }
+            if (shouldFinalize)
+            {
+                await HandleFinishGame(gameId, game);
+            }
+
+            return movement;
+        }
 
         public async Task<bool> TryMakeMove(Guid gameId, string move)
         {
             Game game = GetGame(gameId);
             if (game == null) return false;
 
-            // Esta es nuestra "bandera"
+            // bandera
             bool shouldFinalize = false;
             bool moveSuccess = false;
 
@@ -195,7 +223,7 @@ namespace Chess.Service
                 {
                     shouldFinalize = true;
                 }
-            } 
+            }
 
             if (shouldFinalize)
             {
@@ -210,24 +238,44 @@ namespace Chess.Service
             try
             {
                 double whiteScore = 0.5;
-                if (game.Finish == GameOverReason.WHITE_WINS) whiteScore = 1.0;
-                else if (game.Finish == GameOverReason.BLACK_WINS) whiteScore = 0.0;
+                if (game.Finish == GameOverReason.BLACK_WINS ||
+    game.Finish == GameOverReason.WHITE_SURRENDERS ||
+    game.Finish == GameOverReason.WHITE_DISCONNECTED)
+                {
+                    whiteScore = 0.0;
+                }
+                else if (game.Finish == GameOverReason.DRAW ||
+                         game.Finish == GameOverReason.STALEMATE)
+                {
+                    whiteScore = 0.5;
+                }
+                else
+                {
+                    whiteScore = 1.0;
+                }
 
-                var (newWhite, newBlack) = EloCalculator.GetNewRatings(
+                var delta = EloCalculator.CalculateDelta(
                     game.WhitePlayer.Elo,
                     game.BlackPlayer.Elo,
                     whiteScore
                 );
 
-                game.WhitePlayer.Elo = newWhite;
-                game.BlackPlayer.Elo = newBlack;
+                game.EloChange = delta;
+                game.WhiteEloBefore = game.WhitePlayer.Elo;
+                game.BlackEloBefore = game.BlackPlayer.Elo;
+
+
+
+                game.WhitePlayer.Elo = Math.Max(100, game.WhitePlayer.Elo + delta);
+                game.BlackPlayer.Elo = Math.Max(100, game.BlackPlayer.Elo - delta);
+
+                game.WhiteEloAfter = game.WhitePlayer.Elo;
+                game.BlackEloAfter = game.BlackPlayer.Elo;
 
                 await SaveGameToDatabase(gameId);
 
                 _oldGames.TryAdd(gameId, game);
 
-                //add timer and dont delete it instant
-                // _activeGames.TryRemove(gameId, out _); 
             }
             catch (Exception ex)
             {
@@ -255,7 +303,7 @@ namespace Chess.Service
                 handle = true;
             }
             if (handle) await HandleFinishGame(gameId, game);
-            
+
         }
 
         public async Task TryResignGame(Guid gameId, string nickname)
@@ -361,7 +409,7 @@ namespace Chess.Service
                 }
                 else if (game.WhitePlayer == null)
                 {
-                    
+
                     game.WhitePlayer = new Player(nickname, playerId, playerElo, PieceColor.White);
                     Console.WriteLine($"Player {nickname} Playing with white pieces");
                     joined = true;
@@ -388,7 +436,8 @@ namespace Chess.Service
 
         public void HandlePlayerDisconnection(Guid gameId, string nickname)
         {
-            lock (_lock){
+            lock (_lock)
+            {
 
                 var game = this.GetGame(gameId);
                 if (game == null)
@@ -410,7 +459,7 @@ namespace Chess.Service
                         game.BlackPlayer = null;
                     }
                 }
-                else if(game.CurrentGameState == GameState.Playing)
+                else if (game.CurrentGameState == GameState.Playing)
 
                 {
 
@@ -535,7 +584,12 @@ namespace Chess.Service
                     Id = game.Id,
                     WhitePlayerId = game.WhitePlayer.Id,
                     BlackPlayerId = game.BlackPlayer.Id,
-                    //TODO AÑADIR ELO
+                    BlackEloBefore = game.BlackEloBefore,
+                    BlackEloAfter = game.BlackEloAfter,
+                    WhiteEloBefore = game.WhiteEloBefore,
+                    WhiteEloAfter = game.WhiteEloAfter,
+                    EloChange = game.EloChange,
+                    TotalMovements = game.MovesHistory.Count,
                     PgnHistory = string.Join(",", game.MovesHistory),
                     Result = game.Finish.ToString(),
                     CreatedAt = DateTime.UtcNow,
@@ -551,7 +605,6 @@ namespace Chess.Service
                 await context.SaveChangesAsync();
             }
         }
-
         public List<GameSummaryDto> GetActiveGamesSummary()
         {
             return _activeGames.Select(g => new GameSummaryDto
@@ -568,4 +621,5 @@ namespace Chess.Service
             }).ToList();
         }
 
-    } }
+    }
+}

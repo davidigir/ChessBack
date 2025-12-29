@@ -104,6 +104,38 @@ namespace Chess.Model
             
         }
 
+        public void Promote(Piece pieceToPromote, PieceType pieceType)
+        {
+            pieceToPromote.PieceType = pieceType;
+        }
+
+        public void PerformPassantMove(string move, string lastMove)
+        {
+            string pos1 = move.Substring(0, 2);
+            string pos2 = move.Substring(2, 2);
+
+            Coordinate coord1 = Coordinate.FromAlgebraic(pos1);
+            Coordinate coord2 = Coordinate.FromAlgebraic(pos2);
+
+
+            string lastMovepos1 = lastMove.Substring(0, 2);
+            string lastMovepos2 = lastMove.Substring(2, 2);
+
+            Coordinate lastMovecoord1 = Coordinate.FromAlgebraic(lastMovepos1);
+            Coordinate lastMovecoord2 = Coordinate.FromAlgebraic(lastMovepos2);
+
+            Piece pieceSelected = Pieces[coord1.Y, coord1.X];
+            pieceSelected.HasMoved = true;
+
+
+            Pieces[coord2.Y, coord2.X] = pieceSelected;
+            Pieces[coord1.Y, coord1.X] = Piece.NonePiece;
+            Pieces[lastMovecoord2.Y, lastMovecoord2.X] = Piece.NonePiece;
+
+
+
+        }
+
         public string PerformCastle(string move)
         {
             string pos1 = move.Substring(0, 2);

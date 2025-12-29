@@ -153,22 +153,48 @@ namespace Chess.Hubs
 
         }
 
+        public async Task SetPromoteTo(Guid gameId, PieceType pieceTypeToPromote)
+        {
+            string groupName = gameId.ToString();
+            string senderId = Context.ConnectionId;
+            string move = await _gameService.TryPromotePiece(gameId, pieceTypeToPromote);
+
+            GameOverReason finishType = _gameService.IsTheGameFinished(gameId);
+            var game = _gameService.GetGame(gameId);
+
+            if (finishType != GameOverReason.PLAYING)
+            {
+                await Clients.Group(groupName).SendAsync("GameOverReason", finishType.ToString());
+
+
+            }
+            await NotifyGameStatus(gameId, game);
+
+            string fenBoard = _gameService.GetFenBoard(gameId);
+            await Clients.Group(groupName).SendAsync("MoveReceived", senderId, move);
+            await Clients.Group(groupName).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
+            await Clients.Group(groupName).SendAsync("BoardFen", fenBoard);
+            await Clients.Groups(groupName).SendAsync("MovesHistory", _gameService.getStringMovesHistory(gameId));
+
+        }
+
         public async Task MakeMove(Guid gameId, string move)
         {
             string groupName = gameId.ToString();
             string senderId = Context.ConnectionId;
 
             Console.WriteLine($"[DEBUG] {move}");
-            _gameService.TryMakeMove(gameId, move);
+            await _gameService.TryMakeMove(gameId, move);
             GameOverReason finishType = _gameService.IsTheGameFinished(gameId);
+            var game = _gameService.GetGame(gameId);
+
             if (finishType != GameOverReason.PLAYING)
             {   
                 await Clients.Group(groupName).SendAsync("GameOverReason", finishType.ToString());
-                var game = _gameService.GetGame(gameId);
 
-                await NotifyGameStatus(gameId, game);
 
             }
+            await NotifyGameStatus(gameId, game);
             string fenBoard = _gameService.GetFenBoard(gameId);
             await Clients.Group(groupName).SendAsync("MoveReceived", senderId, move);
             await Clients.Group(groupName).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
