@@ -1,8 +1,10 @@
 ﻿using Chess.Dto;
 using Chess.Service;
+using Chess.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -13,9 +15,11 @@ namespace Chess.Controllers
     public class UserController : ControllerBase
     {
         private readonly IUserService _userService;
-        public UserController(IUserService userService)
+        private readonly ConfigSettings _configSettings;
+        public UserController(IUserService userService, IOptions<ConfigSettings> options)
         {
             _userService = userService;
+            _configSettings = options.Value;
         }
         [HttpPost("register")]
         public async Task<ActionResult<UserResponseDto>> Register([FromBody] UserRegisterDto dto)
@@ -152,13 +156,13 @@ namespace Chess.Controllers
 
         private void SetTokenCookie(string token)
         {
-            Response.Cookies.Append("X-Access-Token", token, new CookieOptions
+            Response.Cookies.Append(_configSettings.Auth.CookieName, token, new CookieOptions
             {
-                HttpOnly = true,
-                Secure = false,
+                HttpOnly = _configSettings.Auth.CookieHttpOnly,
+                Secure = _configSettings.Auth.CookieSecure,
                 SameSite = SameSiteMode.Lax,
-                Path = "/",
-                Expires = DateTime.UtcNow.AddHours(1)
+                Path = _configSettings.Auth.CookiePath,
+                Expires = DateTime.UtcNow.AddHours(_configSettings.Auth.CookieExpirationTime)
             });
         }
         //[Authorize]
@@ -167,7 +171,6 @@ namespace Chess.Controllers
         {
             try
             {
-                Console.WriteLine("qweqweewq");
                 var game = await _userService.GetGameById(gameId);
                 Console.Write(game.ToString());
                 if(game == null)
@@ -206,11 +209,11 @@ namespace Chess.Controllers
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
-            Response.Cookies.Delete("X-Access-Token", new CookieOptions
+            Response.Cookies.Delete(_configSettings.Auth.CookieName, new CookieOptions
             {
-                Path = "/",
-                Secure = true,
-                HttpOnly = false
+                Path = _configSettings.Auth.CookiePath,
+                Secure = _configSettings.Auth.CookieSecure,
+                HttpOnly = _configSettings.Auth.CookieHttpOnly
             });
             return Ok(new { message = "Logged out" });
         }

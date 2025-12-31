@@ -1,7 +1,9 @@
 ﻿using Chess.Db;
 using Chess.Dto;
 using Chess.Entity;
+using Chess.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -12,13 +14,13 @@ namespace Chess.Service
     public class UserService : IUserService
     {
         private readonly ChessDbContext _context;
-        private readonly IConfiguration _configuration;
+        private readonly JwtSettings _jwtSettings;
 
 
-        public UserService (ChessDbContext context, IConfiguration configuration)
+        public UserService (ChessDbContext context, IOptions<JwtSettings> options)
         {
             _context = context;
-            _configuration = configuration;
+            _jwtSettings = options.Value; 
         }
 
         public async Task<UserEntity?> Register(string nickname, string password)
@@ -53,7 +55,7 @@ namespace Chess.Service
         public string GenerateToken(UserEntity user)
         {
             var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]);
+            var key = Encoding.UTF8.GetBytes(_jwtSettings.Key);
 
             var tokenDescriptor = new SecurityTokenDescriptor
             {
@@ -62,9 +64,9 @@ namespace Chess.Service
             new Claim(ClaimTypes.Name, user.Nickname),
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
         }),
-                Expires = DateTime.UtcNow.AddHours(1),
-                Issuer = _configuration["Jwt:Issuer"],
-                Audience = _configuration["Jwt:Audience"],
+                Expires = DateTime.UtcNow.AddHours(_jwtSettings.ExpirationTime),
+                Issuer = _jwtSettings.Issuer,
+                Audience = _jwtSettings.Audience,
                 SigningCredentials = new SigningCredentials(
                     new SymmetricSecurityKey(key),
                     SecurityAlgorithms.HmacSha256Signature)

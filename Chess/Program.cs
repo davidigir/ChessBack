@@ -1,16 +1,28 @@
 using Chess.Db;
 using Chess.Hubs;
 using Chess.Service;
+using Chess.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.Json.Serialization;
 
-const string CorsOrigins = "_myAllowedOrigins";
+
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+//Default variables
+
+builder.Services.Configure<ConfigSettings>(builder.Configuration.GetSection("ChessSettings"));
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
+var chessSettings = builder.Configuration.GetSection("ChessSettings").Get<ConfigSettings>()
+    ?? throw new Exception("ChessSettings Not Found");
+var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()
+    ?? throw new Exception("JWT Not found");
+
+const string CorsOrigins = "_myAllowedOrigins";
 
 builder.Services.AddCors(options =>
 {
@@ -41,12 +53,10 @@ builder.Services.AddDbContext<ChessDbContext>(options =>
     options.UseSqlServer(connectionString)
 );
 
-builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddSingleton<GameService>();
 builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddSignalR();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -56,15 +66,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key))
         };
         options.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>
             {
-                var accessToken = context.Request.Cookies["X-Access-Token"];
+                var accessToken = context.Request.Cookies[chessSettings.Auth.CookieName];
                 var path = context.HttpContext.Request.Path;
 
                 //if (!string.IsNullOrEmpty(accessToken) &&
@@ -104,6 +114,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHub<ChessHub>("/chesshub"); // Tus WebSockets
+app.MapHub<ChessHub>("/chesshub"); // ws
 
 app.Run();

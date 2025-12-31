@@ -2,8 +2,10 @@
 using Chess.Enums;
 using Chess.Model;
 using Chess.Service;
+using Chess.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 using System.Drawing;
 using System.Net.NetworkInformation;
 
@@ -13,10 +15,12 @@ namespace Chess.Hubs
     public class ChessHub : Hub
     {
         private readonly GameService _gameService;
+        private readonly ConfigSettings _configSettings;
 
-        public ChessHub(GameService gameService)
+        public ChessHub(GameService gameService, IOptions<ConfigSettings> options)
         {
             _gameService = gameService;
+            _configSettings = options.Value;
         }
 
         //user joins a game
@@ -146,8 +150,8 @@ namespace Chess.Hubs
 
             var request = new Dto.CreateGameRequestDto
             {
-                RoomName = "Rematch",
-                Password = "123"
+                RoomName = _configSettings.Gameplay.RematchRoomName,
+                Password = _configSettings.Gameplay.RematchRoomPassword
             };
             
 

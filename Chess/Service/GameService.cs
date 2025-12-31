@@ -4,7 +4,9 @@ using Chess.Entity;
 using Chess.Enums;
 using Chess.Hubs;
 using Chess.Model;
+using Chess.Settings;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Reflection.Metadata;
 using System.Threading.Tasks;
@@ -25,13 +27,15 @@ namespace Chess.Service
 
         private readonly IHubContext<ChessHub> _hubContext;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly ConfigSettings _configSettings;
 
 
 
-        public GameService(IHubContext<ChessHub> hubContext, IServiceScopeFactory scopeFactory)
+        public GameService(IHubContext<ChessHub> hubContext, IServiceScopeFactory scopeFactory, IOptions<ConfigSettings> options)
         {
             _hubContext = hubContext;
             _scopeFactory = scopeFactory;
+            _configSettings = options.Value;
         }
 
 
@@ -265,10 +269,12 @@ namespace Chess.Service
                     whiteScore = 1.0;
                 }
 
+                int kFactor = _configSettings.Gameplay.KFactor;
                 var delta = EloCalculator.CalculateDelta(
                     game.WhitePlayer.Elo,
                     game.BlackPlayer.Elo,
-                    whiteScore
+                    whiteScore,
+                    kFactor
                 );
 
                 game.EloChange = delta;
@@ -277,8 +283,8 @@ namespace Chess.Service
 
 
 
-                game.WhitePlayer.Elo = Math.Max(100, game.WhitePlayer.Elo + delta);
-                game.BlackPlayer.Elo = Math.Max(100, game.BlackPlayer.Elo - delta);
+                game.WhitePlayer.Elo = Math.Max(_configSettings.Gameplay.MinimumElo, game.WhitePlayer.Elo + delta);
+                game.BlackPlayer.Elo = Math.Max(_configSettings.Gameplay.MinimumElo, game.BlackPlayer.Elo - delta);
 
                 game.WhiteEloAfter = game.WhitePlayer.Elo;
                 game.BlackEloAfter = game.BlackPlayer.Elo;
@@ -296,7 +302,7 @@ namespace Chess.Service
                     _oldGames.TryRemove(gId, out var g);
                     g?.CleanTimer?.Dispose();
                     Console.WriteLine($"Cleanup: Game {gId} removed from oldgames.");
-                }, gameId, TimeSpan.FromSeconds(10), Timeout.InfiniteTimeSpan);
+                }, gameId, TimeSpan.FromSeconds(_configSettings.Gameplay.InactivityDeleteTimeout), Timeout.InfiniteTimeSpan);
 
             }
             catch (Exception ex)
@@ -511,7 +517,7 @@ namespace Chess.Service
 
         private void StartTimeoutTimer(Guid gameId)
         {
-            System.Timers.Timer timer = new System.Timers.Timer(5000);
+            System.Timers.Timer timer = new System.Timers.Timer(_configSettings.Gameplay.ReconnectionTimeout);
             timer.AutoReset = false;
             timer.Enabled = true;
 
