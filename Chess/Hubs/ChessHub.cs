@@ -47,14 +47,24 @@ namespace Chess.Hubs
 
         public async Task HandleRequestDraw (Guid gameId)
         {
-            var game = _gameService.GetGame(gameId);
+            try { 
+             var game = _gameService.GetGame(gameId);
             if (game == null) return;
             if (game.CurrentGameState != GameState.Playing) return;
             await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendDrawRequest");
+
         }
 
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+        Console.WriteLine($"Rematch Error");
+            }
+}
+
         public async Task HandleRequestRematch (Guid gameId)
-        {           
+        {
+            try { 
             //await Clients.Caller.SendAsync("CreateRematchRoom");
             var game = _gameService.GetOldGame(gameId);
             if (game == null) return;
@@ -68,12 +78,20 @@ namespace Chess.Hubs
             await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendRematchRequest");
 
     }
+            }
+
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                Console.WriteLine($"Rematch Error");
+            }
 
 
-}
+        }
 
         public async Task HandleResignGame (Guid gameId)
         {
+            try { 
             var game = _gameService.GetGame(gameId);
             if (game == null) return;
             if (game.CurrentGameState != GameState.Playing) return;
@@ -87,8 +105,19 @@ namespace Chess.Hubs
 
         }
 
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+        Console.WriteLine($"Rematch Error");
+            }
+
+}
+
         public async Task HandleAcceptDraw(Guid gameId)
         {
+            try
+            {
+
             var game = _gameService.GetGame(gameId);
             if (game == null) return;
 
@@ -100,24 +129,74 @@ namespace Chess.Hubs
                 await NotifyGameStatus(gameId, game);
 
             }
-
         }
+
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+        Console.WriteLine($"Rematch Error");
+            }
+
+}
 
         public async Task HandleAcceptRematch(Guid gameId)
         {
+            try
+            {
+
             var request = new Dto.CreateGameRequestDto
             {
                 RoomName = "Rematch",
                 Password = "123"
             };
             
+
             Game game = _gameService.StartRematchGame(gameId, request);
 
             await Clients.Group(gameId.ToString()).SendAsync("HandleJoinGameByRematch", game.Id);
-        }
+            }
 
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                Console.WriteLine($"Rematch Error");
+            }
+        }
+        public async Task GetValidMoves(Guid gameId, string pos)
+        {
+            try { 
+            if (string.IsNullOrWhiteSpace(pos) || pos.Length < 2)
+            {
+                await Clients.Caller.SendAsync("RecieveValidMoves", new List<Coordinate>());
+                return;
+            }
+
+            try
+            {
+                Console.WriteLine($"Posición recibida: {pos}");
+                var moves = await _gameService.GetValidMoves(gameId, pos);
+
+                await Clients.Caller.SendAsync("RecieveValidMoves", moves ?? new List<Coordinate>());
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error procesando movimientos: {ex.Message}");
+                await Clients.Caller.SendAsync("RecieveValidMoves", new List<Coordinate>());
+            }
+            }
+
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                Console.WriteLine($"Rematch Error");
+            }
+        }
         public async Task SendPlayerReady(Guid gameId)
         {
+            try
+            {
+
+            
             var nickname = Context.User?.Identity?.Name;
             var game = _gameService.GetGame(gameId);
             var color = "";
@@ -150,11 +229,21 @@ namespace Chess.Hubs
             });
             await NotifyGameStatus(gameId, game);
 
+            }
 
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                Console.WriteLine($"Rematch Error");
+            }
         }
 
         public async Task SetPromoteTo(Guid gameId, PieceType pieceTypeToPromote)
         {
+            try
+            {
+
+            
             string groupName = gameId.ToString();
             string senderId = Context.ConnectionId;
             string move = await _gameService.TryPromotePiece(gameId, pieceTypeToPromote);
@@ -176,10 +265,21 @@ namespace Chess.Hubs
             await Clients.Group(groupName).SendAsync("BoardFen", fenBoard);
             await Clients.Groups(groupName).SendAsync("MovesHistory", _gameService.getStringMovesHistory(gameId));
 
+            }
+
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                Console.WriteLine($"Rematch Error");
+            }
         }
 
         public async Task MakeMove(Guid gameId, string move)
         {
+            try
+            {
+
+            
             string groupName = gameId.ToString();
             string senderId = Context.ConnectionId;
 
@@ -200,11 +300,21 @@ namespace Chess.Hubs
             await Clients.Group(groupName).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
             await Clients.Group(groupName).SendAsync("BoardFen", fenBoard);
             await Clients.Groups(groupName).SendAsync("MovesHistory", _gameService.getStringMovesHistory(gameId));
+            }
 
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                Console.WriteLine($"Rematch Error");
+            }
         }
 
         public override async Task OnConnectedAsync()
         {
+            try
+            {
+
+            
             //jwt
             var nickname = Context.User?.Identity?.Name;
             var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
@@ -255,10 +365,21 @@ namespace Chess.Hubs
             }
             Console.WriteLine("[OnCOnnected]");
             await base.OnConnectedAsync();
+            }
+
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                Console.WriteLine($"Rematch Error");
+            }
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
+            try
+            {
+
+            
             var nickname = Context.User?.Identity?.Name;
             var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
 
@@ -283,6 +404,15 @@ namespace Chess.Hubs
             }
 
             await base.OnDisconnectedAsync(exception);
+            }
+
+            catch
+            {
+                await Clients.Caller.SendAsync("ErrorMessage", "Time to rematch out");
+                await base.OnDisconnectedAsync(exception);
+
+                Console.WriteLine($"Rematch Error");
+            }
         }
 
 

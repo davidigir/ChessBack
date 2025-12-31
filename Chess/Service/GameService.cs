@@ -233,6 +233,17 @@ namespace Chess.Service
             return moveSuccess;
         }
 
+        public async Task<List<Coordinate>> GetValidMoves(Guid gameId, string pos)
+        {
+            Game game = GetGame(gameId);
+            if (game == null) return [];
+            Coordinate source = Coordinate.FromAlgebraic(pos);
+            List<Coordinate> coords = MovementValidator.GetValidMoves(game.Board, source, game.LastMove);
+            return coords;
+        }
+
+
+
         private async Task HandleFinishGame(Guid gameId, Game game)
         {
             try
@@ -274,7 +285,18 @@ namespace Chess.Service
 
                 await SaveGameToDatabase(gameId);
 
+                _activeGames.TryRemove(gameId, out _);
                 _oldGames.TryAdd(gameId, game);
+
+                //we should remove oldgames to save ram
+                game.CleanTimer?.Dispose();
+                game.CleanTimer = new System.Threading.Timer((state) =>
+                {
+                    Guid gId = (Guid)state;
+                    _oldGames.TryRemove(gId, out var g);
+                    g?.CleanTimer?.Dispose();
+                    Console.WriteLine($"Cleanup: Game {gId} removed from oldgames.");
+                }, gameId, TimeSpan.FromSeconds(10), Timeout.InfiniteTimeSpan);
 
             }
             catch (Exception ex)

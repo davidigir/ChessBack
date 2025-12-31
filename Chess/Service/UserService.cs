@@ -186,30 +186,41 @@ namespace Chess.Service
             try
             {
                 var user = await GetById(userId);
-                
+
+                var whiteWinReasons = new[] { "WHITE_WINS", "BLACK_SURRENDERS", "BLACK_DISCONNECTED" };
+                var blackWinReasons = new[] { "BLACK_WINS", "WHITE_SURRENDERS", "WHITE_DISCONNECTED" };
+                var drawReasons = new[] { "DRAW", "STALEMATE" };
+
                 var stats = await _context.Games
                     .Where(g => g.WhitePlayerId == userId || g.BlackPlayerId == userId)
                     .GroupBy(g => 1)
                     .Select(group => new
                     {
                         TotalGames = group.Count(),
+
                         TotalWins = group.Count(g =>
-                            (g.WhitePlayerId == userId && g.Result == "WHITE_WINS") ||
-                            (g.BlackPlayerId == userId && g.Result == "BLACK_WINS")),
-                        WhiteWins = group.Count(g => g.WhitePlayerId == userId && g.Result == "WHITE_WINS"),
-                        BlackWins = group.Count(g => g.BlackPlayerId == userId && g.Result == "BLACK_WINS"),
+                            (g.WhitePlayerId == userId && whiteWinReasons.Contains(g.Result)) ||
+                            (g.BlackPlayerId == userId && blackWinReasons.Contains(g.Result))),
+                        WhiteDraws = group.Count(g => g.WhitePlayerId == userId && drawReasons.Contains(g.Result)),
+                        BlackDraws = group.Count(g => g.BlackPlayerId == userId && drawReasons.Contains(g.Result)),
+                        WhiteLosses = group.Count(g => g.WhitePlayerId == userId && blackWinReasons.Contains(g.Result)),
+                        BlackLosses = group.Count(g => g.BlackPlayerId == userId && whiteWinReasons.Contains(g.Result)),
+                        WhiteWins = group.Count(g => g.WhitePlayerId == userId && whiteWinReasons.Contains(g.Result)),
+                        BlackWins = group.Count(g => g.BlackPlayerId == userId && blackWinReasons.Contains(g.Result)),
                         WhiteGames = group.Count(g => g.WhitePlayerId == userId),
                         BlackGames = group.Count(g => g.BlackPlayerId == userId),
-                        Draws = group.Count(g => g.Result == "DRAW"),
+
+                        Draws = group.Count(g => drawReasons.Contains(g.Result)),
+
                         Losses = group.Count(g =>
-                            (g.Result == "BLACK_WINS" && g.WhitePlayerId == userId) ||
-                            (g.Result == "WHITE_WINS" && g.BlackPlayerId == userId))
+                            (g.WhitePlayerId == userId && blackWinReasons.Contains(g.Result)) ||
+                            (g.BlackPlayerId == userId && whiteWinReasons.Contains(g.Result)))
                     })
                     .FirstOrDefaultAsync();
 
                 if (stats == null || stats.TotalGames == 0)
                 {
-                    return new StatsDto { TotalGames = 0 };
+                    return new StatsDto { TotalGames = 0, Elo = user.Elo };
                 }
 
                 return new StatsDto
@@ -219,6 +230,17 @@ namespace Chess.Service
                     TotalDraws = stats.Draws,
                     TotalLosses = stats.Losses,
                     Elo = user.Elo,
+                    
+                    BlackDraws = stats.BlackDraws,
+                    BlackLosses = stats.BlackLosses,
+                    WhiteDraws = stats.WhiteDraws,
+                    WhiteLosses = stats.WhiteLosses,
+                    
+                    BlackGames = stats.BlackGames,
+                    BlackWins = stats.BlackWins,
+                    WhiteGames = stats.WhiteGames,
+                    WhiteWins = stats.WhiteWins,
+
                     Winrate = Math.Round((double)stats.TotalWins / stats.TotalGames * 100, 2),
 
                     BlackWinrate = stats.BlackGames > 0
@@ -232,7 +254,7 @@ namespace Chess.Service
             }
             catch (Exception ex)
             {
-                throw new Exception("Error calculating statistics");
+                throw new Exception($"Error calculating statistics: {ex.Message}");
             }
         }
 

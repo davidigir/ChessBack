@@ -41,6 +41,7 @@ namespace Chess.Service
 
             if (isMoveValid)
             {
+                //TODO we should do a temp move instead of cloning all the board 64 times
                 Board _tempBoard = board.Clone();
 
                 Piece pieceSelected = _tempBoard.Pieces[source.Y, source.X];
@@ -109,6 +110,34 @@ namespace Chess.Service
                 return Enums.PieceColor.White;
             }
             return Enums.PieceColor.White;
+        }
+
+        public static List<Coordinate> GetValidMoves(Board board, Coordinate source, string lastMove)
+        {
+            List<Coordinate> validMoves = new List<Coordinate>();
+
+            Piece pieceToMove = board.Pieces[source.Y, source.X];
+            if (pieceToMove == null || !pieceToMove.IsPiece()) return validMoves;
+
+            for (int y = 0; y < 8; y++)
+            {
+                for (int x = 0; x < 8; x++)
+                {
+                    if (x == source.X && y == source.Y) continue;
+
+                    Coordinate destination = new Coordinate(x, y); 
+
+                    Piece target = board.Pieces[y, x];
+                    if (target != null && target.IsPiece() && target.PieceColor == pieceToMove.PieceColor)
+                        continue;
+
+                    if (IsMoveValid(board, source, destination, lastMove))
+                    {
+                        validMoves.Add(destination);
+                    }
+                }
+            }
+            return validMoves;
         }
 
 
