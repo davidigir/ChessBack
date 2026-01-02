@@ -4,7 +4,7 @@ Servidor para una web de ajedrez en línea desarrollado con **.NET 9**. Gestiona
 
 ---
 
-## 🚀 Características principales
+## Características principales
 
 * **Juego en Tiempo Real:** Comunicación bidireccional mediante **SignalR**.
 * **Sistema de ELO:** Cálculo dinámico de ranking tras cada partida finalizada.
@@ -17,7 +17,7 @@ Servidor para una web de ajedrez en línea desarrollado con **.NET 9**. Gestiona
 
 ---
 
-## 🛠️ Stack Tecnológico
+## Tecnologías
 
 * **Framework:** .NET 9 (ASP.NET Core Web API)
 * **Base de Datos:** SQL Server + Entity Framework Core
