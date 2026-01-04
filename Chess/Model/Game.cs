@@ -51,6 +51,9 @@ namespace Chess.Model
             
             this.Board = new Board();
             this.Board.InitializeBoard();
+            //this.Board.Pieces[0, 0] = new Piece(PieceColor.White, PieceType.King);
+            //this.Board.Pieces[7, 7] = new Piece(PieceColor.Black, PieceType.King);
+            //this.Board.Pieces[3, 4] = new Piece(PieceColor.Black, PieceType.Queen);
 
 
             this.CurrentTurn = PieceColor.White;
@@ -203,11 +206,18 @@ namespace Chess.Model
                     this.CurrentGameState = GameState.Finished;
 
                 }
+
                 if (!isCheckStaleMate && isCheck)
                 {
                     //check
                     Console.WriteLine($"{oppositePlayerColor} is under check");
 
+                }
+                if (isInsufficentMaterial())
+                {
+                    Console.WriteLine("Se acaba aqui");
+                    this.Finish = GameOverReason.STALEMATE;
+                    this.CurrentGameState = GameState.Finished;
                 }
 
 
@@ -218,11 +228,59 @@ namespace Chess.Model
             }
             else
             {
-                Console.WriteLine("Movimiento Ilegal");
+                Console.WriteLine("Ilegal Movement");
                 return false;
             }
 
         }
 
+        private bool isInsufficentMaterial()
+        {
+            var whitePieces = new List<(Piece Piece, int Row, int Col)>();
+            var blackPieces = new List<(Piece Piece, int Row, int Col)>();
+
+            for (int r = 0; r < 8; r++)
+            {
+                for (int c = 0; c < 8; c++)
+                {
+                    var p = Board.Pieces[r, c];
+                    if (p == null) continue;
+                    if (p.PieceType == PieceType.Pawn || p.PieceType == PieceType.Rook || p.PieceType == PieceType.Queen)
+                        return false;
+                }
+            }
+            int whiteCount = whitePieces.Count;
+            int blackCount = blackPieces.Count;
+            //totalPieces Without King
+            int totalPieces = whiteCount + blackCount;
+
+            //king vs king
+            if (totalPieces == 0) return true;
+            if (totalPieces == 1)
+            {
+                var piece = whiteCount > 0 ? whitePieces[0] : blackPieces[0];
+                //king vs bishop or knight
+                return piece.Piece.PieceType == PieceType.Bishop || piece.Piece.PieceType == PieceType.Knight;                
+            }
+            if (whiteCount == 1 && blackCount == 1)
+            {
+                //bishop vs bishop
+                var whiteP = whitePieces[0];
+                var blackP = blackPieces[0];
+                if (whiteP.Piece.PieceType == PieceType.Bishop && blackP.Piece.PieceType == PieceType.Bishop)
+                {
+                    bool whiteBishopIsWhiteSquare = (whiteP.Row + whiteP.Col) % 2 == 0;
+                    bool blackBishopIsWhiteSquare = (blackP.Row + blackP.Col) % 2 == 0;
+                    //only stalemate if they are in the same square color
+                    return whiteBishopIsWhiteSquare == blackBishopIsWhiteSquare;
+
+                }
+            }
+            return false;
+            
+        }
+        
+
     }
 }
+ 

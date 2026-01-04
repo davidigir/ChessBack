@@ -227,6 +227,7 @@ namespace Chess.Service
                 {
                     shouldFinalize = true;
                 }
+
             }
 
             if (shouldFinalize)
@@ -290,15 +291,16 @@ namespace Chess.Service
                 game.BlackEloAfter = game.BlackPlayer.Elo;
 
                 await SaveGameToDatabase(gameId);
-
-                _activeGames.TryRemove(gameId, out _);
+                await NotifyGameStatus(gameId, game);
+                //_activeGames.TryRemove(gameId, out _);
+                //TODO WE SHOULD HANDLE THIS OLD ACTIVE GAMES IN A DIFFERENT WAY bc we are removing active and old games at the same time
                 _oldGames.TryAdd(gameId, game);
 
-                //we should remove oldgames to save ram
                 game.CleanTimer?.Dispose();
                 game.CleanTimer = new System.Threading.Timer((state) =>
                 {
                     Guid gId = (Guid)state;
+                    _activeGames.TryRemove(gameId, out _);
                     _oldGames.TryRemove(gId, out var g);
                     g?.CleanTimer?.Dispose();
                     Console.WriteLine($"Cleanup: Game {gId} removed from oldgames.");
@@ -309,6 +311,29 @@ namespace Chess.Service
             {
                 Console.WriteLine($"Failed to finalize game {gameId}: {ex.Message}");
             }
+        }
+
+        private async Task NotifyGameStatus(Guid gameId, Game game)
+        {
+
+            var status = new GameStatusDto
+
+            {
+                White = game.WhitePlayer?.Nickname,
+                WhiteIsReady = game.WhitePlayer?.IsReady ?? false,
+                WhitePlayerOnline = game.WhitePlayer?.IsConnected ?? false,
+                WhitePlayerElo = game.WhitePlayer?.Elo ?? 0,
+                Black = game.BlackPlayer?.Nickname,
+                BlackPlayerElo = game.BlackPlayer?.Elo ?? 0,
+                BlackIsReady = game.BlackPlayer?.IsReady ?? false,
+                BlackPlayerOnline = game.BlackPlayer?.IsConnected ?? false,
+                Status = game.CurrentGameState.ToString(),
+                RoomName = game.RoomName
+            };
+            
+            await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameStatus", status);
+            await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
+
         }
         public async Task TryDrawGame(Guid gameId)
         {
@@ -505,7 +530,7 @@ namespace Chess.Service
                     {
                         DeleteGame(gameId);
 
-                    }, null, TimeSpan.FromSeconds(30), Timeout.InfiniteTimeSpan
+                    }, null, TimeSpan.FromSeconds(_configSettings.Gameplay.ReconnectionTimeout), Timeout.InfiniteTimeSpan
                     );
                 }
 
@@ -540,7 +565,7 @@ namespace Chess.Service
 
         }
 
-        private async void HandleTimeout(Guid gameId)
+        private async Task HandleTimeout(Guid gameId)
         {
             var game = GetGame(gameId);
             if (game == null) return;

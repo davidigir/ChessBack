@@ -323,6 +323,7 @@ namespace Chess.Hubs
             var nickname = Context.User?.Identity?.Name;
             var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
 
+
             if (Guid.TryParse(gameIdString, out Guid gameId) && nickname != null)
             {
                 var game = _gameService.GetGame(gameId);
@@ -330,9 +331,11 @@ namespace Chess.Hubs
 
                 string assignedColor = "";
                 bool statusPlayer = false;
+                bool isReconnection = false;
                 if (game.WhitePlayer?.Nickname == nickname)
                 {
                     assignedColor = "White";
+                    isReconnection = !string.IsNullOrEmpty(game.WhitePlayer.ConnectionId);
                     game.WhitePlayer.ConnectionId = Context.ConnectionId;
                     statusPlayer = game.WhitePlayer.IsReady;
                     game.WhitePlayer.IsConnected = true;
@@ -340,6 +343,8 @@ namespace Chess.Hubs
                 else if (game.BlackPlayer?.Nickname == nickname)
                 {
                     assignedColor = "Black";
+                    isReconnection = !string.IsNullOrEmpty(game.BlackPlayer.ConnectionId);
+
                     game.BlackPlayer.ConnectionId = Context.ConnectionId;
                     statusPlayer = game.BlackPlayer.IsReady;
                     game.BlackPlayer.IsConnected = true;
@@ -356,7 +361,9 @@ namespace Chess.Hubs
                         nickname = nickname,
                         status = statusPlayer
                     });
-                    await Clients.Group(gameId.ToString()).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
+                        if (isReconnection) await Clients.OthersInGroup(gameId.ToString()).SendAsync("PlayerReconnected", nickname);
+                    if (!isReconnection) await Clients.OthersInGroup(gameId.ToString()).SendAsync("PlayerJoined", nickname);
+                        await Clients.Group(gameId.ToString()).SendAsync("PlayerTurn", _gameService.getCurrentTurn(gameId).ToString());
 
                     await NotifyGameStatus(gameId, game);
 
@@ -396,6 +403,7 @@ namespace Chess.Hubs
                 
                     //Only discconect the player
                     _gameService.HandlePlayerDisconnection(gameId, nickname);
+                    await Clients.OthersInGroup(groupName).SendAsync("PlayerDisconected", nickname);
 
                 //Timeout 
 

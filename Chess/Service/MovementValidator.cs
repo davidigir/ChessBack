@@ -199,7 +199,7 @@ namespace Chess.Service
 
                     Piece possibleKing = board.Pieces[y, x];
 
-                    if(possibleKing.PieceType == PieceType.King && possibleKing.PieceColor == kingColor)
+                    if(possibleKing != null && possibleKing.PieceType == PieceType.King && possibleKing.PieceColor == kingColor)
                     {
                         Coordinate kingPosition = new Coordinate(x, y);
                         PieceColor oppositeColor = GetOppositeColor(kingColor);
