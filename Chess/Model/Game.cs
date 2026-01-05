@@ -142,7 +142,6 @@ namespace Chess.Model
             Piece pieceToMove = Board.Pieces[source.Y, source.X];
             if (pieceToMove == null || pieceToMove.PieceColor != this.CurrentTurn)
             {
-                Console.WriteLine("Error. Piece selected cant play in this turn");
                 return false;
             }
 
@@ -215,8 +214,7 @@ namespace Chess.Model
                 }
                 if (isInsufficentMaterial())
                 {
-                    Console.WriteLine("Se acaba aqui");
-                    this.Finish = GameOverReason.STALEMATE;
+                    this.Finish = GameOverReason.INSUFFICIENT_MATERIAL;
                     this.CurrentGameState = GameState.Finished;
                 }
 
@@ -228,7 +226,6 @@ namespace Chess.Model
             }
             else
             {
-                Console.WriteLine("Ilegal Movement");
                 return false;
             }
 
