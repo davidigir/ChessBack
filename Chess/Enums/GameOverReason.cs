@@ -10,6 +10,10 @@
         WHITE_DISCONNECTED,
         BLACK_DISCONNECTED,
         STALEMATE,
-        PLAYING
+        PLAYING,
+        INSUFFICIENT_MATERIAL,
+        THREEFOLD_REPETITON
+
+
     }
 }

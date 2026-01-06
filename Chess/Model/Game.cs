@@ -14,6 +14,7 @@ namespace Chess.Model
         public bool IsPrivate => !string.IsNullOrEmpty(PasswordHash);
 
         public string? RoomName { get; set; }
+        public List<String> FenHistory { get; set; } = new List<string>();
 
 
         public Board Board { get; set; }
@@ -51,6 +52,7 @@ namespace Chess.Model
             
             this.Board = new Board();
             this.Board.InitializeBoard();
+            this.FenHistory.Add(this.Board.GetFenPlacement());
             //this.Board.Pieces[0, 0] = new Piece(PieceColor.White, PieceType.King);
             //this.Board.Pieces[7, 7] = new Piece(PieceColor.Black, PieceType.King);
             //this.Board.Pieces[3, 4] = new Piece(PieceColor.Black, PieceType.Queen);
@@ -177,6 +179,8 @@ namespace Chess.Model
                     // Normal Move
                     this.Board.Move(move);
                     this.MovesHistory.Add(move);
+                    this.FenHistory.Add(this.Board.GetFenPlacement());
+
                 }
                 this.LastMove = move;
 
@@ -217,6 +221,13 @@ namespace Chess.Model
                     this.Finish = GameOverReason.INSUFFICIENT_MATERIAL;
                     this.CurrentGameState = GameState.Finished;
                 }
+                //we need to verify the threefold 
+                //TODO We need to improve this method bc this can be very slow
+                if (isThreefoldRepetition())
+                {
+                    this.Finish = GameOverReason.THREEFOLD_REPETITON;
+                    this.CurrentGameState = GameState.Finished;
+                }
 
 
                 this.CurrentTurn = oppositePlayerColor;
@@ -229,6 +240,15 @@ namespace Chess.Model
                 return false;
             }
 
+        }
+        private bool isThreefoldRepetition()
+        {
+            string position = this.Board.GetFenPlacement();
+            Console.WriteLine("ACTUAL FEN:");
+            Console.WriteLine(position);
+            int occurrences = this.FenHistory.Count(fen => fen == position);
+
+            return occurrences >= 3;
         }
 
         private bool isInsufficentMaterial()
