@@ -12,7 +12,7 @@
         STALEMATE,
         PLAYING,
         INSUFFICIENT_MATERIAL,
-        THREEFOLD_REPETITON
+        THREEFOLD_REPETITION
 
 
     }

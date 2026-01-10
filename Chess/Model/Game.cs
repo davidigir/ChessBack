@@ -225,7 +225,7 @@ namespace Chess.Model
                 //TODO We need to improve this method bc this can be very slow
                 if (isThreefoldRepetition())
                 {
-                    this.Finish = GameOverReason.THREEFOLD_REPETITON;
+                    this.Finish = GameOverReason.THREEFOLD_REPETITION;
                     this.CurrentGameState = GameState.Finished;
                 }
 
