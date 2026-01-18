@@ -15,7 +15,7 @@ namespace Chess.Model
         public bool IsConnected { get; set; } = true;
 
         public int Elo { get; set; }
-        
+        public bool IsBot { get; set; } = false;
 
 
         public Player(string nickname, int id, int elo, PieceColor color) {

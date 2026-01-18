@@ -38,6 +38,9 @@ namespace Chess.Model
         public string LastMove { get; set; } = "";
 
         public System.Threading.Timer? CleanTimer { get; set; }
+        public System.Threading.Timer? JoinBotTimer { get; set; }
+
+
 
 
         //we can implement smtg to add viewers to the game

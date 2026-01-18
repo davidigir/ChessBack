@@ -33,6 +33,7 @@ namespace Chess.Service
             {
                 Nickname = nickname,
                 Password = passwordHashed,
+                Elo = 100,
                 Email = ""
             };
             _context.Users.Add(user);

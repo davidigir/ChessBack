@@ -55,7 +55,9 @@ builder.Services.AddDbContext<ChessDbContext>(options =>
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddHttpClient();
 builder.Services.AddSingleton<GameService>();
+builder.Services.AddSingleton<IAService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

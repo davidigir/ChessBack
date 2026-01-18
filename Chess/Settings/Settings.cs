@@ -15,12 +15,14 @@
     }
     public class Gameplay
     {
-        public int ReconnectionTimeout {  get; set; }
-        public int InactivityDeleteTimeout { get; set; }
+        public int ReconnectionTimeoutSeconds {  get; set; }
+        public int InactivityDeleteTimeoutSeconds { get; set; }
         public int MinimumElo {  get; set; }
         public int KFactor { get; set; }
         public string RematchRoomName { get; set; }
         public string RematchRoomPassword {  get; set; }
+
+        public bool Bot { get; set; }
     }
     public class AuthSettings
     {

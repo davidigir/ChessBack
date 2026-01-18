@@ -7,6 +7,7 @@ using Chess.Model;
 using Chess.Settings;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
+using Mscc.GenerativeAI;
 using System.Collections.Concurrent;
 using System.Reflection.Metadata;
 using System.Threading.Tasks;
@@ -28,33 +29,33 @@ namespace Chess.Service
         private readonly IHubContext<ChessHub> _hubContext;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ConfigSettings _configSettings;
+        private readonly IAService _IAService;
 
 
 
-        public GameService(IHubContext<ChessHub> hubContext, IServiceScopeFactory scopeFactory, IOptions<ConfigSettings> options)
+        public GameService(IHubContext<ChessHub> hubContext, IServiceScopeFactory scopeFactory, IOptions<ConfigSettings> options, IAService iaService)
         {
             _hubContext = hubContext;
             _scopeFactory = scopeFactory;
             _configSettings = options.Value;
+            _IAService = iaService;
         }
 
 
         public Dictionary<string, bool> getPlayersState(Guid gameId)
         {
-            lock (_lock)
+
+            if (!_activeGames.TryGetValue(gameId, out var game))
             {
-                if (!_activeGames.TryGetValue(gameId, out var game))
-                {
-                    throw new KeyNotFoundException($"Game With ID {gameId} not found");
-                }
-
-                Dictionary<string, bool> playerStates = new Dictionary<string, bool>();
-                playerStates.Add("b", game.BlackPlayer.IsReady);
-                playerStates.Add("w", game.WhitePlayer.IsReady);
-                return playerStates;
-
-
+                throw new KeyNotFoundException($"Game With ID {gameId} not found");
             }
+
+            Dictionary<string, bool> playerStates = new Dictionary<string, bool>();
+            playerStates.Add("b", game.BlackPlayer.IsReady);
+            playerStates.Add("w", game.WhitePlayer.IsReady);
+            return playerStates;
+
+
         }
 
 
@@ -70,17 +71,8 @@ namespace Chess.Service
 
         public string getStringMovesHistory(Guid gameId)
         {
-            if (!_activeGames.TryGetValue(gameId, out var game))
-            {
-                throw new KeyNotFoundException($"Game With ID {gameId} not found");
-            }
-            string stringMoves = "";
-            List<string> movesHistory = game.MovesHistory;
-            foreach (string move in movesHistory)
-            {
-                stringMoves += move + ",";
-            }
-            return stringMoves;
+            if (!_activeGames.TryGetValue(gameId, out var game)) return "";
+            return string.Join(",", game.MovesHistory);
         }
 
         public Game StartNewGame(CreateGameRequestDto request)
@@ -96,12 +88,117 @@ namespace Chess.Service
             if (_activeGames.TryAdd(gameId, newGame))
             {
                 Console.WriteLine($"New Game started with the UUID: {gameId}");
+                HandleBotJoin(gameId, newGame);
                 return newGame;
             }
             else
             {
                 throw new InvalidOperationException("Failed to start new game due to GUID collision.");
             }
+        }
+
+        public void HandleBotJoin(Guid gameId, Game game)
+        {
+            game.JoinBotTimer?.Dispose();
+
+            if (game.BlackPlayer != null) return;
+
+            game.JoinBotTimer = new System.Threading.Timer(async (state) =>
+            {
+                int elo = (game.WhitePlayer?.Elo ?? 100) + 30;
+                Player bot = new Player("MiniCarlsen", 999, elo, PieceColor.Black);
+                bot.IsReady = true;
+                bot.IsConnected = true;
+                bot.IsBot = true;
+                game.BlackPlayer = bot;
+
+                Console.WriteLine($"Hub Bot joined the game {gameId}");
+
+                await _hubContext.Clients.Group(gameId.ToString())
+                    .SendAsync("PlayerJoined", bot.Nickname);
+                var status = new GameStatusDto
+
+                {
+                    White = game.WhitePlayer?.Nickname,
+                    WhiteIsReady = game.WhitePlayer?.IsReady ?? false,
+                    WhitePlayerOnline = game.WhitePlayer?.IsConnected ?? false,
+                    WhitePlayerElo = game.WhitePlayer?.Elo ?? 0,
+                    Black = game.BlackPlayer?.Nickname,
+                    BlackPlayerElo = game.BlackPlayer?.Elo ?? 0,
+                    BlackIsReady = game.BlackPlayer?.IsReady ?? false,
+                    BlackPlayerOnline = game.BlackPlayer?.IsConnected ?? false,
+                    Status = game.CurrentGameState.ToString(),
+                    RoomName = game.RoomName
+                };
+
+                await _hubContext.Clients.Group(gameId.ToString()).SendAsync("GameStatus", status);
+
+                
+
+                game.JoinBotTimer?.Dispose();
+                game.JoinBotTimer = null;
+
+            }, gameId, TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
+        }
+
+        public async Task BotTryToMove(Guid gameId, Game game)
+        {
+            if (game?.BlackPlayer == null || !game.BlackPlayer.IsBot) return;
+
+            var fen = GetFenBoard(gameId);
+            string movesHistory = string.Join(",", game.MovesHistory);
+
+            Console.WriteLine($"Bot IAFEN: {fen}");
+            Console.WriteLine($"Bot IAMoves: {movesHistory}");
+            bool success = false;
+            int maxTry = 0;
+            string move = "";
+            while (!success && maxTry<10)
+            {
+                await Task.Delay(1000);
+                move = await _IAService.GetMove(fen, movesHistory);
+                Console.WriteLine($"Bot {maxTry} ");
+                Console.WriteLine($"Bot {move}");
+
+                success = await TryMakeMove(gameId, move);
+                maxTry++;
+            }
+            if (success)
+            {
+                { /**
+                await _hubContext.Clients.Group(gameId.ToString()).SendAsync("MoveReceived", game.BlackPlayer.Id, move);
+                await _hubContext.Clients.Group(gameId.ToString()).SendAsync("PlayerTurn", getCurrentTurn(gameId).ToString());
+                await _hubContext.Clients.Group(gameId.ToString()).SendAsync("BoardFen", fen);
+                await _hubContext.Clients.Groups(gameId.ToString()).SendAsync("MovesHistory", getStringMovesHistory(gameId));
+                    */
+                }
+
+
+                string groupName = gameId.ToString();
+
+                await _hubContext.Clients.Group(groupName).SendAsync("MoveReceived", game.BlackPlayer.Id, move);
+
+                await _hubContext.Clients.Group(groupName).SendAsync("BoardFen", GetFenBoard(gameId));
+
+                await _hubContext.Clients.Group(groupName).SendAsync("PlayerTurn", getCurrentTurn(gameId).ToString());
+
+                await _hubContext.Clients.Group(groupName).SendAsync("MovesHistory", getStringMovesHistory(gameId));
+
+                GameOverReason finishType = IsTheGameFinished(gameId);
+                if (finishType != GameOverReason.PLAYING)
+                {
+                    await _hubContext.Clients.Group(groupName).SendAsync("GameOverReason", finishType.ToString());
+                }
+
+                await NotifyGameStatus(gameId, game);
+            }
+            else
+            {
+                Console.WriteLine("IA: Error");
+            }
+
+
+
         }
 
         public Game StartRematchGame(Guid oldGameId, CreateGameRequestDto request)
@@ -116,27 +213,25 @@ namespace Chess.Service
             newGame.RoomName = !string.IsNullOrEmpty(request.RoomName) ? request.RoomName : oldGame.RoomName;
             if (!string.IsNullOrEmpty(request.Password)) newGame.SetPassword(request.Password);
 
-            lock (_lock)
-            {
-                if (oldGame.BlackPlayer != null)
-                {
-                    newGame.WhitePlayer = new Player(
-                        oldGame.BlackPlayer.Nickname,
-                        oldGame.BlackPlayer.Id,
-                        oldGame.BlackPlayer.Elo,
-                        PieceColor.White
-                    );
-                }
 
-                if (oldGame.WhitePlayer != null)
-                {
-                    newGame.BlackPlayer = new Player(
-                        oldGame.WhitePlayer.Nickname,
-                        oldGame.WhitePlayer.Id,
-                        oldGame.WhitePlayer.Elo,
-                        PieceColor.Black
-                    );
-                }
+            if (oldGame.BlackPlayer != null)
+            {
+                newGame.WhitePlayer = new Player(
+                    oldGame.BlackPlayer.Nickname,
+                    oldGame.BlackPlayer.Id,
+                    oldGame.BlackPlayer.Elo,
+                    PieceColor.White
+                );
+            }
+
+            if (oldGame.WhitePlayer != null)
+            {
+                newGame.BlackPlayer = new Player(
+                    oldGame.WhitePlayer.Nickname,
+                    oldGame.WhitePlayer.Id,
+                    oldGame.WhitePlayer.Elo,
+                    PieceColor.Black
+                );
             }
 
             if (_activeGames.TryAdd(newId, newGame))
@@ -213,7 +308,7 @@ namespace Chess.Service
             Game game = GetGame(gameId);
             if (game == null) return false;
 
-            // bandera
+            // flag
             bool shouldFinalize = false;
             bool moveSuccess = false;
 
@@ -255,8 +350,8 @@ namespace Chess.Service
             {
                 double whiteScore = 0.5;
                 if (game.Finish == GameOverReason.BLACK_WINS ||
-    game.Finish == GameOverReason.WHITE_SURRENDERS ||
-    game.Finish == GameOverReason.WHITE_DISCONNECTED)
+                    game.Finish == GameOverReason.WHITE_SURRENDERS ||
+                    game.Finish == GameOverReason.WHITE_DISCONNECTED)
                 {
                     whiteScore = 0.0;
                 }
@@ -304,7 +399,7 @@ namespace Chess.Service
                     _oldGames.TryRemove(gId, out var g);
                     g?.CleanTimer?.Dispose();
                     Console.WriteLine($"Cleanup: Game {gId} removed from oldgames.");
-                }, gameId, TimeSpan.FromSeconds(_configSettings.Gameplay.InactivityDeleteTimeout), Timeout.InfiniteTimeSpan);
+                }, gameId, TimeSpan.FromSeconds(_configSettings.Gameplay.InactivityDeleteTimeoutSeconds), Timeout.InfiniteTimeSpan);
 
             }
             catch (Exception ex)
@@ -438,6 +533,10 @@ namespace Chess.Service
             if (_activeGames.TryRemove(gameId, out var game))
             {
                 game.CleanTimer?.Dispose();
+                game.CleanTimer = null;
+                game.JoinBotTimer?.Dispose();
+                game.JoinBotTimer = null;
+                
                 Console.WriteLine($"Game {gameId} Deleted by inactivity.");
             }
         }
@@ -471,6 +570,7 @@ namespace Chess.Service
                 {
                     game.BlackPlayer = new Player(nickname, playerId, playerElo, PieceColor.Black);
                     Console.WriteLine($"Player {nickname} playing with black pieces");
+                    game.JoinBotTimer?.Dispose();
                     joined = true;
                 }
 
@@ -530,9 +630,9 @@ namespace Chess.Service
                     {
                         DeleteGame(gameId);
 
-                    }, null, TimeSpan.FromSeconds(_configSettings.Gameplay.ReconnectionTimeout), Timeout.InfiniteTimeSpan
+                    }, null, TimeSpan.FromSeconds(_configSettings.Gameplay.InactivityDeleteTimeoutSeconds), Timeout.InfiniteTimeSpan
                     );
-                }
+                }       
 
 
             }
@@ -542,7 +642,8 @@ namespace Chess.Service
 
         private void StartTimeoutTimer(Guid gameId)
         {
-            System.Timers.Timer timer = new System.Timers.Timer(_configSettings.Gameplay.ReconnectionTimeout);
+            double seconds = _configSettings.Gameplay.ReconnectionTimeoutSeconds;
+            System.Timers.Timer timer = new System.Timers.Timer(seconds * 1000);
             timer.AutoReset = false;
             timer.Enabled = true;
 
@@ -615,8 +716,10 @@ namespace Chess.Service
 
         }
 
-        public void StopTimeoutTimer(Guid gameId)
+        public void StopTimeoutTimer(Guid gameId, Game game)
         {
+            //if (game.CurrentGameState == GameState.Finished)
+            //TODO We should handle if the game was already finished
             if (_reconnectionTimers.TryRemove(gameId, out System.Timers.Timer timer))
             {
                 timer.Stop();
