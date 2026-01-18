@@ -23,3 +23,24 @@ Servidor para una web de ajedrez en línea desarrollado con **.NET 9**. Gestiona
 * **Base de Datos:** SQL Server + Entity Framework Core
 * **Real-time:** SignalR
 * **Seguridad:** JWT + BCrypt
+
+## Propuestas de Mejora
+
+- [ ] **Sistema de Espectadores**
+- [ ] **Sistema de Skins**
+- [ ] **Optimización del Bot**
+- [ ] **Sistema de Red Social**
+- [ ] **Análisis Post-Partida:**
+
+
+
+## Diagramas
+
+### Diagrama Entidad-Relación
+<img width="449" height="361" alt="Chess drawio" src="https://github.com/user-attachments/assets/6a58a8b0-ce6b-411c-84d7-736deecbb99f" />
+
+
+### Diagrama de flujo
+
+<img width="3522" height="8192" alt="Mermaid Chart - Create complex, visual diagrams with text -2026-01-18-091035" src="https://github.com/user-attachments/assets/53951cae-f186-4c23-8f77-603262c3c1ca" />
+
