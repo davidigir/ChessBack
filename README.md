@@ -42,5 +42,7 @@ Servidor para una web de ajedrez en línea desarrollado con **.NET 9**. Gestiona
 
 ### Diagrama de flujo
 
-<img width="3522" height="8192" alt="Mermaid Chart - Create complex, visual diagrams with text -2026-01-18-091035" src="https://github.com/user-attachments/assets/53951cae-f186-4c23-8f77-603262c3c1ca" />
+<img width="3522" height="8192" alt="Mermaid Chart - Create complex, visual diagrams with text -2026-01-19-233347" src="https://github.com/user-attachments/assets/9169dd3f-080c-4bc3-b98b-1958c140add8" />
+
+
 
