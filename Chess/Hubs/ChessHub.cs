@@ -353,7 +353,7 @@ namespace Chess.Hubs
                         statusPlayer = game.BlackPlayer.IsReady;
                         game.BlackPlayer.IsConnected = true;
                     }
-                    _gameService.StopTimeoutTimer(gameId);
+                    _gameService.StopTimeoutTimer(gameId, game);
 
                     if (assignedColor != "")
                     {

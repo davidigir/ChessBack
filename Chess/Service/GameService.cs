@@ -88,7 +88,9 @@ namespace Chess.Service
             if (_activeGames.TryAdd(gameId, newGame))
             {
                 Console.WriteLine($"New Game started with the UUID: {gameId}");
-                HandleBotJoin(gameId, newGame);
+
+                if (_configSettings.Gameplay.Bot) HandleBotJoin(gameId, newGame);
+                          
                 return newGame;
             }
             else

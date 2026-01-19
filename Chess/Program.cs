@@ -74,6 +74,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
         options.Events = new JwtBearerEvents
         {
+
             OnMessageReceived = context =>
             {
                 var accessToken = context.Request.Cookies[chessSettings.Auth.CookieName];
