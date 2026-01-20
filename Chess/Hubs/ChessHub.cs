@@ -50,40 +50,45 @@ namespace Chess.Hubs
             }
         }
 
-        public async Task HandleRequestDraw (Guid gameId)
+        public async Task HandleRequestDraw(Guid gameId)
         {
-            try { 
-             var game = _gameService.GetGame(gameId);
-            if (game == null) return;
-            if (game.CurrentGameState != GameState.Playing) return;
-            await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendDrawRequest");
+            try
+            {
+                var game = _gameService.GetGame(gameId);
+                if (game == null) return;
+                if (game.CurrentGameState != GameState.Playing) return;
+                await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendDrawRequest");
 
-        }
+            }
 
             catch
             {
                 await Clients.Caller.SendAsync("ErrorMessage", "Request draw error");
-        Console.WriteLine($"Hub Rematch Error");
+                Console.WriteLine($"Hub Rematch Error");
             }
-}
+        }
 
-        public async Task HandleRequestRematch (Guid gameId)
+        public async Task HandleRequestRematch(Guid gameId)
         {
             //TODO Refactor this request match propertly with old and new games
-            try { 
-            //await Clients.Caller.SendAsync("CreateRematchRoom");
-            var game = _gameService.GetOldGame(gameId);
-            if (game == null) return;
-            var nickname = Context.User?.Identity?.Name;
-            var rivalId = (game.WhitePlayer?.Nickname == nickname)
-        ? game.BlackPlayer?.ConnectionId
-        : game.WhitePlayer?.ConnectionId;
-            if (!string.IsNullOrEmpty(rivalId)) { 
-                await Clients.Client(rivalId).SendAsync("SendRematchRequest");
-            }else{
-            await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendRematchRequest");
+            try
+            {
+                //await Clients.Caller.SendAsync("CreateRematchRoom");
+                var game = _gameService.GetOldGame(gameId);
+                if (game == null) return;
+                var nickname = Context.User?.Identity?.Name;
+                var rivalId = (game.WhitePlayer?.Nickname == nickname)
+            ? game.BlackPlayer?.ConnectionId
+            : game.WhitePlayer?.ConnectionId;
+                if (!string.IsNullOrEmpty(rivalId))
+                {
+                    await Clients.Client(rivalId).SendAsync("SendRematchRequest");
+                }
+                else
+                {
+                    await Clients.OthersInGroup(gameId.ToString()).SendAsync("SendRematchRequest");
 
-    }
+                }
             }
 
             catch
@@ -95,21 +100,22 @@ namespace Chess.Hubs
 
         }
 
-        public async Task HandleResignGame (Guid gameId)
+        public async Task HandleResignGame(Guid gameId)
         {
-            try { 
+            try
+            {
                 var game = _gameService.GetGame(gameId);
                 if (game == null) return;
                 if (game.CurrentGameState != GameState.Playing) return;
                 var nickname = Context.User?.Identity?.Name;
                 if (nickname == null || nickname == "") return;
                 await _gameService.TryResignGame(gameId, nickname);
-            
+
                 await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
 
                 await NotifyGameStatus(gameId, game);
 
-        }
+            }
 
             catch
             {
@@ -117,7 +123,7 @@ namespace Chess.Hubs
                 Console.WriteLine($"Rematch Error");
             }
 
-}
+        }
 
         public async Task HandleAcceptDraw(Guid gameId)
         {
@@ -134,8 +140,8 @@ namespace Chess.Hubs
 
                     await NotifyGameStatus(gameId, game);
 
+                }
             }
-        }
 
             catch
             {
@@ -143,7 +149,7 @@ namespace Chess.Hubs
                 Console.WriteLine($"Rematch Error");
             }
 
-}
+        }
 
         public async Task HandleAcceptRematch(Guid gameId)
         {
@@ -155,7 +161,7 @@ namespace Chess.Hubs
                     RoomName = _configSettings.Gameplay.RematchRoomName,
                     Password = _configSettings.Gameplay.RematchRoomPassword
                 };
-            
+
 
                 Game game = _gameService.StartRematchGame(gameId, request);
 
@@ -170,12 +176,12 @@ namespace Chess.Hubs
         }
         public async Task GetValidMoves(Guid gameId, string pos)
         {
-   
-                if (string.IsNullOrWhiteSpace(pos) || pos.Length < 2)
-                {
-                    await Clients.Caller.SendAsync("RecieveValidMoves", new List<Coordinate>());
-                    return;
-                }
+
+            if (string.IsNullOrWhiteSpace(pos) || pos.Length < 2)
+            {
+                await Clients.Caller.SendAsync("RecieveValidMoves", new List<Coordinate>());
+                return;
+            }
 
             try
             {
@@ -204,7 +210,7 @@ namespace Chess.Hubs
             try
             {
 
-            
+
                 var nickname = Context.User?.Identity?.Name;
                 var game = _gameService.GetGame(gameId);
                 var color = "";
@@ -217,7 +223,7 @@ namespace Chess.Hubs
                     game.WhitePlayer.IsReady = !game.WhitePlayer.IsReady;
                     color = "White";
                     status = game.WhitePlayer.IsReady;
-                  
+
                 }
                 else if (game.BlackPlayer?.Nickname == nickname)
                 {
@@ -251,7 +257,7 @@ namespace Chess.Hubs
             try
             {
 
-            
+
                 string groupName = gameId.ToString();
                 string senderId = Context.ConnectionId;
                 string move = await _gameService.TryPromotePiece(gameId, pieceTypeToPromote);
@@ -268,7 +274,7 @@ namespace Chess.Hubs
 
 
                 await NotifyAllGame(gameId, game, senderId, move);
-               
+
 
             }
 
@@ -284,7 +290,7 @@ namespace Chess.Hubs
             try
             {
 
-            
+
                 string groupName = gameId.ToString();
                 string senderId = Context.ConnectionId;
 
@@ -296,7 +302,7 @@ namespace Chess.Hubs
                 var game = _gameService.GetGame(gameId);
 
                 if (finishType != GameOverReason.PLAYING)
-                {   
+                {
                     await Clients.Group(groupName).SendAsync("GameOverReason", finishType.ToString());
 
 
@@ -320,9 +326,9 @@ namespace Chess.Hubs
         public override async Task OnConnectedAsync()
         {
             try
-                {
+            {
 
-            
+
                 //jwt
                 var nickname = Context.User?.Identity?.Name;
                 var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
@@ -377,7 +383,7 @@ namespace Chess.Hubs
                         string fenBoard = _gameService.GetFenBoard(gameId);
                         await Clients.Group(gameId.ToString()).SendAsync("GameOverReason", game.Finish.ToString());
                         await Clients.Group(gameId.ToString()).SendAsync("BoardFen", fenBoard);
-                           
+
                     }
                 }
                 Console.WriteLine("Hub Connected");
@@ -396,17 +402,17 @@ namespace Chess.Hubs
             try
             {
 
-            
-            var nickname = Context.User?.Identity?.Name;
-            var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
 
-            if (Guid.TryParse(gameIdString, out Guid gameId) && nickname != null)
-            {
-                var game = _gameService.GetGame(gameId);
-                if (game == null) return;
+                var nickname = Context.User?.Identity?.Name;
+                var gameIdString = Context.GetHttpContext().Request.Query["gameId"];
 
-                string groupName = gameId.ToString();
-                
+                if (Guid.TryParse(gameIdString, out Guid gameId) && nickname != null)
+                {
+                    var game = _gameService.GetGame(gameId);
+                    if (game == null) return;
+
+                    string groupName = gameId.ToString();
+
                     //Only discconect the player
                     _gameService.HandlePlayerDisconnection(gameId, nickname);
                     await Clients.OthersInGroup(groupName).SendAsync("PlayerDisconected", nickname);
@@ -414,13 +420,13 @@ namespace Chess.Hubs
 
 
 
-                await NotifyGameStatus(gameId, game);
+                    await NotifyGameStatus(gameId, game);
 
-               
 
-            }
 
-            await base.OnDisconnectedAsync(exception);
+                }
+
+                await base.OnDisconnectedAsync(exception);
             }
 
             catch
@@ -453,7 +459,8 @@ namespace Chess.Hubs
 
             await Clients.Group(gameId.ToString()).SendAsync("GameStatus", status);
         }
-        private async Task NotifyAllGame(Guid gameId, Game game, string senderId, string move) {
+        private async Task NotifyAllGame(Guid gameId, Game game, string senderId, string move)
+        {
             string fenBoard = _gameService.GetFenBoard(gameId);
 
 
@@ -464,4 +471,5 @@ namespace Chess.Hubs
             await Clients.Groups(gameId.ToString()).SendAsync("MovesHistory", _gameService.getStringMovesHistory(gameId));
 
         }
+    }
 }
